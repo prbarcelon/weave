@@ -27,6 +27,7 @@ pub struct MergeResult {
 impl MergeResult {
     pub fn is_clean(&self) -> bool {
         self.conflicts.is_empty()
+            && !self.content.lines().any(|l| l.starts_with("<<<<<<<"))
     }
 }
 
@@ -93,6 +94,39 @@ pub fn entity_merge_with_registry(
     file_path: &str,
     registry: &ParserRegistry,
 ) -> MergeResult {
+    // Guard: if any input already contains conflict markers (e.g. AU/AA conflicts
+    // where git bakes markers into stage blobs), report as conflict immediately.
+    // We can't do a meaningful 3-way merge on pre-conflicted content.
+    if has_conflict_markers(base) || has_conflict_markers(ours) || has_conflict_markers(theirs) {
+        let mut stats = MergeStats::default();
+        stats.entities_conflicted = 1;
+        stats.used_fallback = true;
+        // Use whichever input has markers as the merged content (preserves
+        // the conflict for the user to resolve manually).
+        let content = if has_conflict_markers(ours) {
+            ours
+        } else if has_conflict_markers(theirs) {
+            theirs
+        } else {
+            base
+        };
+        let complexity = classify_conflict(Some(base), Some(ours), Some(theirs));
+        return MergeResult {
+            content: content.to_string(),
+            conflicts: vec![EntityConflict {
+                entity_name: "(file)".to_string(),
+                entity_type: "file".to_string(),
+                kind: ConflictKind::BothModified,
+                complexity,
+                ours_content: Some(ours.to_string()),
+                theirs_content: Some(theirs.to_string()),
+                base_content: Some(base.to_string()),
+            }],
+            warnings: vec![],
+            stats,
+        };
+    }
+
     // Fast path: if ours == theirs, no merge needed
     if ours == theirs {
         return MergeResult {
@@ -362,7 +396,10 @@ pub fn entity_merge_with_registry(
     }
 
     // Merge interstitial regions
-    let merged_interstitials = merge_interstitials(&base_regions, &ours_regions, &theirs_regions);
+    let (merged_interstitials, interstitial_conflicts) =
+        merge_interstitials(&base_regions, &ours_regions, &theirs_regions);
+    stats.entities_conflicted += interstitial_conflicts.len();
+    conflicts.extend(interstitial_conflicts);
 
     // Reconstruct the file
     let content = reconstruct(
@@ -846,7 +883,7 @@ fn merge_interstitials(
     base_regions: &[FileRegion],
     ours_regions: &[FileRegion],
     theirs_regions: &[FileRegion],
-) -> HashMap<String, String> {
+) -> (HashMap<String, String>, Vec<EntityConflict>) {
     let base_map: HashMap<&str, &str> = base_regions
         .iter()
         .filter_map(|r| match r {
@@ -877,6 +914,7 @@ fn merge_interstitials(
     all_keys.extend(theirs_map.keys());
 
     let mut merged: HashMap<String, String> = HashMap::new();
+    let mut interstitial_conflicts: Vec<EntityConflict> = Vec::new();
 
     for key in all_keys {
         let base_content = base_map.get(key).copied().unwrap_or("");
@@ -905,15 +943,32 @@ fn merge_interstitials(
                     Ok(m) => {
                         merged.insert(key.to_string(), m);
                     }
-                    Err(conflicted) => {
-                        merged.insert(key.to_string(), conflicted);
+                    Err(_conflicted) => {
+                        // Create a proper conflict instead of silently embedding
+                        // raw conflict markers into the output.
+                        let complexity = classify_conflict(
+                            Some(base_content),
+                            Some(ours_content),
+                            Some(theirs_content),
+                        );
+                        let conflict = EntityConflict {
+                            entity_name: key.to_string(),
+                            entity_type: "interstitial".to_string(),
+                            kind: ConflictKind::BothModified,
+                            complexity,
+                            ours_content: Some(ours_content.to_string()),
+                            theirs_content: Some(theirs_content.to_string()),
+                            base_content: Some(base_content.to_string()),
+                        };
+                        merged.insert(key.to_string(), conflict.to_conflict_markers());
+                        interstitial_conflicts.push(conflict);
                     }
                 }
             }
         }
     }
 
-    merged
+    (merged, interstitial_conflicts)
 }
 
 /// Check if a region is predominantly import/use statements.
@@ -2002,6 +2057,12 @@ fn is_binary(content: &str) -> bool {
     content.as_bytes().iter().take(8192).any(|&b| b == 0)
 }
 
+/// Check if content already contains git conflict markers.
+/// This happens with AU/AA conflicts where git stores markers in stage blobs.
+fn has_conflict_markers(content: &str) -> bool {
+    content.contains("<<<<<<<") && content.contains(">>>>>>>")
+}
+
 fn skip_sesame(file_path: &str) -> bool {
     let path_lower = file_path.to_lowercase();
     let extensions = [
@@ -2994,5 +3055,96 @@ fn subtract(a: i32, b: i32) -> i32 {
         );
         assert!(result.content.contains("multiply"), "Should have multiply");
         assert!(result.content.contains("divide"), "Should have divide");
+    }
+
+    #[test]
+    fn test_interstitial_conflict_not_silently_embedded() {
+        // Regression test: when interstitial content between entities has a
+        // both-modified conflict, merge_interstitials must report it as a real
+        // conflict instead of silently embedding raw diffy markers and claiming
+        // is_clean=true.
+        //
+        // Scenario: a barrel export file (index.ts) with comments between
+        // export statements. Both sides modify the SAME interstitial comment
+        // block differently. The exports are the entities; the comment between
+        // them is interstitial content that goes through merge_interstitials
+        // → diffy, which cannot auto-merge conflicting edits.
+        let base = r#"export { alpha } from "./alpha";
+
+// Section: data utilities
+// TODO: add more exports here
+
+export { beta } from "./beta";
+"#;
+        let ours = r#"export { alpha } from "./alpha";
+
+// Section: data utilities (sorting)
+// Sorting helpers for list views
+
+export { beta } from "./beta";
+"#;
+        let theirs = r#"export { alpha } from "./alpha";
+
+// Section: data utilities (filtering)
+// Filtering helpers for search views
+
+export { beta } from "./beta";
+"#;
+        let result = entity_merge(base, ours, theirs, "index.ts");
+
+        // The key assertions:
+        // 1. If the content has conflict markers, is_clean() MUST be false
+        let has_markers = result.content.contains("<<<<<<<") || result.content.contains(">>>>>>>");
+        if has_markers {
+            assert!(
+                !result.is_clean(),
+                "BUG: is_clean()=true but merged content has conflict markers!\n\
+                 stats: {}\nconflicts: {:?}\ncontent:\n{}",
+                result.stats, result.conflicts, result.content
+            );
+            assert!(
+                result.stats.entities_conflicted > 0,
+                "entities_conflicted should be > 0 when markers are present"
+            );
+        }
+
+        // 2. If it was resolved cleanly, no markers should exist
+        if result.is_clean() {
+            assert!(
+                !has_markers,
+                "Clean merge should not contain conflict markers!\ncontent:\n{}",
+                result.content
+            );
+        }
+    }
+
+    #[test]
+    fn test_pre_conflicted_input_not_treated_as_clean() {
+        // Regression test for AU/AA conflicts: git can store conflict markers
+        // directly into stage blobs. Weave must not return is_clean=true.
+        let base = "";
+        let theirs = "";
+        let ours = r#"/**
+ * MIT License
+ */
+
+<<<<<<<< HEAD:src/lib/exports/index.ts
+export { renderDocToBuffer } from "./doc-exporter";
+export type { ExportOptions, ExportMetadata, RenderContext } from "./types";
+========
+export * from "./editor";
+export * from "./types";
+>>>>>>>> feature:packages/core/src/editor/index.ts
+"#;
+        let result = entity_merge(base, ours, theirs, "index.ts");
+
+        assert!(
+            !result.is_clean(),
+            "Pre-conflicted input must not be reported as clean!\n\
+             stats: {}\nconflicts: {:?}",
+            result.stats, result.conflicts,
+        );
+        assert!(result.stats.entities_conflicted > 0);
+        assert!(!result.conflicts.is_empty());
     }
 }
