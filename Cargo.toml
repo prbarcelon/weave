@@ -5,5 +5,6 @@ members = [
     "crates/weave-driver",
     "crates/weave-cli",
     "crates/weave-mcp",
+    "crates/weave-github",
 ]
 resolver = "2"

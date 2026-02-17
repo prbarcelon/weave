@@ -1,0 +1,8 @@
+target/
+.git/
+site/
+benchmarks/
+docs/
+Formula/
+*.pem
+*.dmg

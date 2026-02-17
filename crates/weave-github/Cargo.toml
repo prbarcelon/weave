@@ -1,0 +1,27 @@
+[package]
+name = "weave-github"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "weave-github"
+path = "src/main.rs"
+
+[dependencies]
+weave-core = { path = "../weave-core" }
+sem-core = { git = "https://github.com/Ataraxy-Labs/sem", version = "0.3" }
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+octocrab = "0.44"
+jsonwebtoken = "9"
+reqwest = { version = "0.12", features = ["json"] }
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "2"
