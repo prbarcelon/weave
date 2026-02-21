@@ -60,8 +60,6 @@ pub fn entity_merge(
     theirs: &str,
     file_path: &str,
 ) -> MergeResult {
-    let registry = create_default_registry();
-
     // Timeout: if entity merge takes > 5 seconds, diffy is likely hitting
     // pathological input. Fall back to git merge-file which always terminates.
     let base_owned = base.to_string();
@@ -1500,6 +1498,7 @@ fn is_container_entity_type(entity_type: &str) -> bool {
     matches!(
         entity_type,
         "class" | "interface" | "enum" | "impl" | "trait" | "module" | "impl_item" | "trait_item"
+            | "struct" | "union" | "namespace" | "struct_item" | "struct_specifier"
     )
 }
 
@@ -1998,6 +1997,28 @@ fn extract_member_chunks(content: &str) -> Option<Vec<MemberChunk>> {
 /// Extract a member name from a declaration line.
 fn extract_member_name(line: &str) -> String {
     let trimmed = line.trim();
+
+    // Go method receiver: `func (c *Calculator) Add(` -> skip receiver, find name before second `(`
+    if trimmed.starts_with("func ") && trimmed.get(5..6) == Some("(") {
+        // Skip past the receiver: find closing `)`, then extract name before next `(`
+        if let Some(recv_close) = trimmed.find(')') {
+            let after_recv = &trimmed[recv_close + 1..];
+            if let Some(paren_pos) = after_recv.find('(') {
+                let before = after_recv[..paren_pos].trim();
+                let name: String = before
+                    .chars()
+                    .rev()
+                    .take_while(|c| c.is_alphanumeric() || *c == '_')
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                if !name.is_empty() {
+                    return name;
+                }
+            }
+        }
+    }
 
     // Strategy 1: For method/function declarations with parentheses,
     // the name is the identifier immediately before `(`.

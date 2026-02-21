@@ -275,7 +275,7 @@ impl WeaveServer {
                                 "type": "dependency_claimed",
                                 "message": format!(
                                     "{} `{}` depends on {} `{}` which is claimed by agent `{}`",
-                                    "function", params.entity_name,
+                                    graph_entity.entity_type, params.entity_name,
                                     dep.entity_type, dep.name, claimed_by
                                 ),
                                 "entity": dep.name,
@@ -297,7 +297,7 @@ impl WeaveServer {
                                 "type": "dependent_claimed",
                                 "message": format!(
                                     "{} `{}` is used by {} `{}` which is claimed by agent `{}`",
-                                    "function", params.entity_name,
+                                    graph_entity.entity_type, params.entity_name,
                                     dep.entity_type, dep.name, claimed_by
                                 ),
                                 "entity": dep.name,
