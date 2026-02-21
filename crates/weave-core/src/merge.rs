@@ -873,6 +873,35 @@ fn diffy_merge(base: &str, ours: &str, theirs: &str) -> Option<String> {
     }
 }
 
+/// Try 3-way merge using git merge-file. Returns None on conflict or error.
+/// This uses a different diff algorithm than diffy and can sometimes merge
+/// cases that diffy cannot (and vice versa).
+fn git_merge_string(base: &str, ours: &str, theirs: &str) -> Option<String> {
+    let dir = tempfile::tempdir().ok()?;
+    let base_path = dir.path().join("base");
+    let ours_path = dir.path().join("ours");
+    let theirs_path = dir.path().join("theirs");
+
+    std::fs::write(&base_path, base).ok()?;
+    std::fs::write(&ours_path, ours).ok()?;
+    std::fs::write(&theirs_path, theirs).ok()?;
+
+    let output = Command::new("git")
+        .arg("merge-file")
+        .arg("-p")
+        .arg(&ours_path)
+        .arg(&base_path)
+        .arg(&theirs_path)
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        String::from_utf8(output.stdout).ok()
+    } else {
+        None
+    }
+}
+
 /// Merge interstitial regions from all three versions.
 /// Uses commutative (set-based) merge for import blocks — inspired by
 /// LastMerge/Mergiraf's "unordered children" concept.
@@ -1638,16 +1667,19 @@ fn try_inner_entity_merge(
     ours_start_line: usize,
     theirs_start_line: usize,
 ) -> Option<InnerMergeResult> {
-    // If sem-core produced child entities, use them directly instead of the
-    // indentation heuristic. This gives tree-sitter-accurate method boundaries.
-    let (base_chunks, ours_chunks, theirs_chunks) = if !ours_children.is_empty() || !theirs_children.is_empty() {
+    // Try sem-core child entities first (tree-sitter-accurate boundaries),
+    // fall back to indentation heuristic if children aren't available.
+    // When children_to_chunks produces chunks, try indentation as a fallback
+    // if the tree-sitter chunks lead to conflicts (the indentation heuristic
+    // can include trailing context that helps diffy merge adjacent changes).
+    let use_children = !ours_children.is_empty() || !theirs_children.is_empty();
+    let (base_chunks, ours_chunks, theirs_chunks) = if use_children {
         (
             children_to_chunks(base_children, base, base_start_line),
             children_to_chunks(ours_children, ours, ours_start_line),
             children_to_chunks(theirs_children, theirs, theirs_start_line),
         )
     } else {
-        // Fallback: indentation heuristic for languages without child entity support
         (
             extract_member_chunks(base)?,
             extract_member_chunks(ours)?,
@@ -1712,8 +1744,10 @@ fn try_inner_entity_merge(
                 } else if b == t {
                     merged_members.push(o.to_string());
                 } else {
-                    // Both changed differently: try diffy, then decorator merge
+                    // Both changed differently: try diffy, then git merge-file, then decorator merge
                     if let Some(merged) = diffy_merge(b, o, t) {
+                        merged_members.push(merged);
+                    } else if let Some(merged) = git_merge_string(b, o, t) {
                         merged_members.push(merged);
                     } else if let Some(merged) = try_decorator_aware_merge(b, o, t) {
                         merged_members.push(merged);
@@ -1832,6 +1866,129 @@ fn try_inner_entity_merge(
     if !ours_footer.ends_with('\n') && ours.ends_with('\n') {
         result.push('\n');
     }
+
+    // If children_to_chunks led to conflicts, retry with indentation heuristic.
+    // The indentation approach includes trailing blank lines in chunks, giving
+    // diffy more context to merge adjacent changes from different branches.
+    if has_conflict && use_children {
+        if let (Some(bc), Some(oc), Some(tc)) = (
+            extract_member_chunks(base),
+            extract_member_chunks(ours),
+            extract_member_chunks(theirs),
+        ) {
+            if !bc.is_empty() || !oc.is_empty() || !tc.is_empty() {
+                let fallback = try_inner_merge_with_chunks(
+                    &bc, &oc, &tc, ours, ours_header, ours_footer,
+                    has_multiline_members,
+                );
+                if let Some(fb) = fallback {
+                    if !fb.has_conflicts {
+                        return Some(fb);
+                    }
+                }
+            }
+        }
+    }
+
+    Some(InnerMergeResult {
+        content: result,
+        has_conflicts: has_conflict,
+    })
+}
+
+/// Inner merge helper using pre-extracted chunks. Used for indentation-heuristic fallback.
+fn try_inner_merge_with_chunks(
+    base_chunks: &[MemberChunk],
+    ours_chunks: &[MemberChunk],
+    theirs_chunks: &[MemberChunk],
+    ours: &str,
+    ours_header: &str,
+    ours_footer: &str,
+    has_multiline_hint: bool,
+) -> Option<InnerMergeResult> {
+    let base_map: HashMap<&str, &str> = base_chunks.iter().map(|c| (c.name.as_str(), c.content.as_str())).collect();
+    let ours_map: HashMap<&str, &str> = ours_chunks.iter().map(|c| (c.name.as_str(), c.content.as_str())).collect();
+    let theirs_map: HashMap<&str, &str> = theirs_chunks.iter().map(|c| (c.name.as_str(), c.content.as_str())).collect();
+
+    let mut all_names: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for chunk in ours_chunks {
+        if seen.insert(chunk.name.clone()) {
+            all_names.push(chunk.name.clone());
+        }
+    }
+    for chunk in theirs_chunks {
+        if seen.insert(chunk.name.clone()) {
+            all_names.push(chunk.name.clone());
+        }
+    }
+
+    let mut merged_members: Vec<String> = Vec::new();
+    let mut has_conflict = false;
+
+    for name in &all_names {
+        let in_base = base_map.get(name.as_str());
+        let in_ours = ours_map.get(name.as_str());
+        let in_theirs = theirs_map.get(name.as_str());
+
+        match (in_base, in_ours, in_theirs) {
+            (Some(b), Some(o), Some(t)) => {
+                if o == t {
+                    merged_members.push(o.to_string());
+                } else if b == o {
+                    merged_members.push(t.to_string());
+                } else if b == t {
+                    merged_members.push(o.to_string());
+                } else if let Some(merged) = diffy_merge(b, o, t) {
+                    merged_members.push(merged);
+                } else if let Some(merged) = git_merge_string(b, o, t) {
+                    merged_members.push(merged);
+                } else {
+                    has_conflict = true;
+                    let mut conflict = String::new();
+                    conflict.push_str(&format!("<<<<<<< ours ({})\n", name));
+                    conflict.push_str(o);
+                    if !o.ends_with('\n') { conflict.push('\n'); }
+                    conflict.push_str("=======\n");
+                    conflict.push_str(t);
+                    if !t.ends_with('\n') { conflict.push('\n'); }
+                    conflict.push_str(&format!(">>>>>>> theirs ({})", name));
+                    merged_members.push(conflict);
+                }
+            }
+            (Some(b), Some(o), None) => {
+                if *b != *o { merged_members.push(o.to_string()); }
+            }
+            (Some(b), None, Some(t)) => {
+                if *b != *t { merged_members.push(t.to_string()); }
+            }
+            (None, Some(o), None) => merged_members.push(o.to_string()),
+            (None, None, Some(t)) => merged_members.push(t.to_string()),
+            (None, Some(o), Some(t)) => {
+                if o == t {
+                    merged_members.push(o.to_string());
+                } else {
+                    has_conflict = true;
+                    merged_members.push(format!("<<<<<<< ours ({})\n{}=======\n{}>>>>>>> theirs ({})", name, o, t, name));
+                }
+            }
+            (Some(_), None, None) | (None, None, None) => {}
+        }
+    }
+
+    let has_multiline_members = has_multiline_hint || merged_members.iter().any(|m| m.contains('\n'));
+    let mut result = String::new();
+    result.push_str(ours_header);
+    if !ours_header.ends_with('\n') { result.push('\n'); }
+    for (i, member) in merged_members.iter().enumerate() {
+        result.push_str(member);
+        if !member.ends_with('\n') { result.push('\n'); }
+        if i < merged_members.len() - 1 && has_multiline_members && !member.ends_with("\n\n") {
+            result.push('\n');
+        }
+    }
+    result.push_str(ours_footer);
+    if !ours_footer.ends_with('\n') && ours.ends_with('\n') { result.push('\n'); }
 
     Some(InnerMergeResult {
         content: result,
