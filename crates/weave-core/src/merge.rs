@@ -994,18 +994,17 @@ fn post_merge_cleanup(content: &str) -> String {
     let lines: Vec<&str> = content.lines().collect();
     let mut result: Vec<&str> = Vec::with_capacity(lines.len());
 
-    // Pass 1: Remove consecutive duplicate non-empty lines.
-    // Uses exact comparison (including indentation) so that closing braces
-    // at different nesting levels aren't falsely matched. Only catches true
-    // duplicates like repeated typedefs or forward declarations.
+    // Pass 1: Remove consecutive duplicate lines that look like declarations or imports.
+    // Only dedup lines that are plausibly merge artifacts (imports, exports, forward decls).
+    // Preserve intentional duplicates like repeated assertions, assignments, or data lines.
     for line in &lines {
         if line.trim().is_empty() {
             result.push(line);
             continue;
         }
         if let Some(prev) = result.last() {
-            if !prev.trim().is_empty() && *prev == *line {
-                continue; // skip consecutive exact duplicate
+            if !prev.trim().is_empty() && *prev == *line && looks_like_declaration(line) {
+                continue; // skip consecutive exact duplicate of declaration-like line
             }
         }
         result.push(line);
@@ -1031,6 +1030,22 @@ fn post_merge_cleanup(content: &str) -> String {
         out.push('\n');
     }
     out
+}
+
+/// Check if a line looks like a declaration/import that merge might duplicate.
+/// Returns false for lines that could be intentionally repeated (assertions,
+/// assignments, data initializers, struct fields, etc.).
+fn looks_like_declaration(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.starts_with("import ")
+        || trimmed.starts_with("from ")
+        || trimmed.starts_with("use ")
+        || trimmed.starts_with("export ")
+        || trimmed.starts_with("require(")
+        || trimmed.starts_with("#include")
+        || trimmed.starts_with("typedef ")
+        || trimmed.starts_with("using ")
+        || (trimmed.starts_with("pub ") && trimmed.contains("mod "))
 }
 
 /// Check if a line is a top-level import/use/require statement.
@@ -1319,43 +1334,45 @@ fn has_excessive_duplicates(entities: &[SemanticEntity]) -> bool {
     for e in entities {
         *counts.entry(&e.name).or_default() += 1;
     }
-    // If any name appears 5+ times, matching becomes too expensive
-    counts.values().any(|&c| c >= 5)
+    // Threshold 10: the old threshold of 5 caused unnecessary fallback to line-level
+    // merge in test files (many `test`/`it`/`describe` names) and React components
+    // (many `div` elements). 10 is high enough to avoid those false triggers while
+    // still catching pathological cases.
+    counts.values().any(|&c| c >= 10)
 }
 
-fn filter_nested_entities(entities: Vec<SemanticEntity>) -> Vec<SemanticEntity> {
+/// Filter out entities that are nested inside other entities.
+/// O(n log n) via sort + stack, replacing the previous O(n^2) approach.
+fn filter_nested_entities(mut entities: Vec<SemanticEntity>) -> Vec<SemanticEntity> {
     if entities.len() <= 1 {
         return entities;
     }
 
-    let mut keep: Vec<bool> = vec![true; entities.len()];
+    // Sort by start_line ASC, then by end_line DESC (widest span first).
+    // A parent entity always appears before its children in this order.
+    entities.sort_by(|a, b| {
+        a.start_line.cmp(&b.start_line).then(b.end_line.cmp(&a.end_line))
+    });
 
-    for (i, entity) in entities.iter().enumerate() {
-        if !keep[i] {
-            continue;
+    // Stack-based filter: track the end_line of the current outermost entity.
+    let mut result: Vec<SemanticEntity> = Vec::with_capacity(entities.len());
+    let mut max_end: usize = 0;
+
+    for entity in entities {
+        if entity.start_line > max_end || max_end == 0 {
+            // Not nested: new top-level entity
+            max_end = entity.end_line;
+            result.push(entity);
+        } else if entity.start_line == result.last().map_or(0, |e| e.start_line)
+            && entity.end_line == result.last().map_or(0, |e| e.end_line)
+        {
+            // Exact same span (e.g. decorated_definition wrapping function_definition)
+            result.push(entity);
         }
-        // Check if this entity is fully contained within another entity
-        for (j, other) in entities.iter().enumerate() {
-            if i == j {
-                continue;
-            }
-            if entity.start_line >= other.start_line
-                && entity.end_line <= other.end_line
-                && !(entity.start_line == other.start_line && entity.end_line == other.end_line)
-            {
-                // entity is strictly nested inside other
-                keep[i] = false;
-                break;
-            }
-        }
+        // else: strictly nested, skip
     }
 
-    entities
-        .into_iter()
-        .enumerate()
-        .filter(|(i, _)| keep[*i])
-        .map(|(_, e)| e)
-        .collect()
+    result
 }
 
 /// Get child entities of a parent, sorted by start line.
