@@ -1,4 +1,5 @@
 use std::fmt;
+use serde::Serialize;
 
 /// The type of conflict between two branches' changes to an entity.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -384,7 +385,7 @@ fn parse_conflict_header(header: &str) -> (String, String, ConflictComplexity, S
 }
 
 /// Statistics about a merge operation.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct MergeStats {
     pub entities_unchanged: usize,
     pub entities_ours_only: usize,

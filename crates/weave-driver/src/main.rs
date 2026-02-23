@@ -9,8 +9,9 @@ fn main() {
     let raw_args: Vec<String> = std::env::args().collect();
 
     // Parse optional flags before positional args
-    // Supported flags: -o <path> / --output <path>
+    // Supported flags: -o <path> / --output <path>, --audit
     let mut output_override: Option<String> = None;
+    let mut audit_enabled = false;
     let mut positional: Vec<String> = Vec::new();
     let mut i = 1;
     while i < raw_args.len() {
@@ -23,6 +24,10 @@ fn main() {
                     eprintln!("weave: -o/--output requires a path argument");
                     process::exit(2);
                 }
+            }
+            "--audit" => {
+                audit_enabled = true;
+                i += 1;
             }
             "-l" | "--marker-length" => {
                 // Accept and skip (we use our own markers)
@@ -104,6 +109,20 @@ fn main() {
     if let Err(e) = fs::write(write_path, &result.content) {
         eprintln!("weave: failed to write result to '{}': {}", write_path, e);
         process::exit(2);
+    }
+
+    // Write audit file if requested
+    if audit_enabled && !result.audit.is_empty() {
+        let audit_json = serde_json::json!({
+            "file": file_path,
+            "confidence": result.stats.confidence(),
+            "stats": result.stats,
+            "entities": result.audit,
+        });
+        let audit_path = format!("{}.weave-audit.json", write_path);
+        if let Err(e) = fs::write(&audit_path, serde_json::to_string_pretty(&audit_json).unwrap_or_default()) {
+            eprintln!("weave: failed to write audit to '{}': {}", audit_path, e);
+        }
     }
 
     // Print stats to stderr

@@ -9,6 +9,7 @@ sem-core = { git = "https://github.com/Ataraxy-Labs/sem", version = "0.3" }
 diffy = "0.4"
 thiserror = "2"
 tempfile = "3"
+serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
 pretty_assertions = "1"

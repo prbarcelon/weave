@@ -4,6 +4,7 @@ use std::process::Command;
 use std::sync::mpsc;
 use std::time::Duration;
 
+use serde::Serialize;
 use sem_core::model::change::ChangeType;
 use sem_core::model::entity::SemanticEntity;
 use sem_core::model::identity::match_entities;
@@ -15,6 +16,37 @@ use crate::region::{extract_regions, EntityRegion, FileRegion};
 use crate::validate::SemanticWarning;
 use crate::reconstruct::reconstruct;
 
+/// How an individual entity was resolved during merge.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResolutionStrategy {
+    Unchanged,
+    OursOnly,
+    TheirsOnly,
+    ContentEqual,
+    DiffyMerged,
+    DecoratorMerged,
+    InnerMerged,
+    ConflictBothModified,
+    ConflictModifyDelete,
+    ConflictBothAdded,
+    ConflictRenameRename,
+    AddedOurs,
+    AddedTheirs,
+    Deleted,
+    Renamed { from: String, to: String },
+    Fallback,
+}
+
+/// Audit record for a single entity's merge resolution.
+#[derive(Debug, Clone, Serialize)]
+pub struct EntityAudit {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub entity_type: String,
+    pub resolution: ResolutionStrategy,
+}
+
 /// Result of a merge operation.
 #[derive(Debug)]
 pub struct MergeResult {
@@ -22,6 +54,7 @@ pub struct MergeResult {
     pub conflicts: Vec<EntityConflict>,
     pub warnings: Vec<SemanticWarning>,
     pub stats: MergeStats,
+    pub audit: Vec<EntityAudit>,
 }
 
 impl MergeResult {
@@ -122,6 +155,7 @@ pub fn entity_merge_with_registry(
             }],
             warnings: vec![],
             stats,
+            audit: vec![],
         };
     }
 
@@ -132,6 +166,7 @@ pub fn entity_merge_with_registry(
             conflicts: vec![],
             warnings: vec![],
             stats: MergeStats::default(),
+            audit: vec![],
         };
     }
 
@@ -145,6 +180,7 @@ pub fn entity_merge_with_registry(
                 entities_theirs_only: 1,
                 ..Default::default()
             },
+            audit: vec![],
         };
     }
 
@@ -158,6 +194,7 @@ pub fn entity_merge_with_registry(
                 entities_ours_only: 1,
                 ..Default::default()
             },
+            audit: vec![],
         };
     }
 
@@ -297,6 +334,7 @@ pub fn entity_merge_with_registry(
 
     let mut stats = MergeStats::default();
     let mut conflicts: Vec<EntityConflict> = Vec::new();
+    let mut audit: Vec<EntityAudit> = Vec::new();
     let mut resolved_entities: HashMap<String, ResolvedEntity> = HashMap::new();
 
     // Detect rename/rename conflicts: same base entity renamed differently in both branches.
@@ -342,6 +380,11 @@ pub fn entity_merge_with_registry(
                 base_content: base_rc,
             };
             conflicts.push(conflict.clone());
+            audit.push(EntityAudit {
+                name: base_name.to_string(),
+                entity_type: base_entity.map(|e| e.entity_type.clone()).unwrap_or_default(),
+                resolution: ResolutionStrategy::ConflictRenameRename,
+            });
             let resolution = ResolvedEntity::Conflict(conflict);
             resolved_entities.insert(entity_id.clone(), resolution.clone());
             resolved_entities.insert(ours_new_id.clone(), resolution);
@@ -361,7 +404,7 @@ pub fn entity_merge_with_registry(
         let ours_change = ours_change_map.get(entity_id);
         let theirs_change = theirs_change_map.get(entity_id);
 
-        let resolution = resolve_entity(
+        let (resolution, strategy) = resolve_entity(
             entity_id,
             in_base,
             in_ours,
@@ -376,6 +419,23 @@ pub fn entity_merge_with_registry(
             &theirs_all,
             &mut stats,
         );
+
+        // Build audit entry from entity info
+        let entity_name = in_ours.map(|e| e.name.as_str())
+            .or_else(|| in_theirs.map(|e| e.name.as_str()))
+            .or_else(|| in_base.map(|e| e.name.as_str()))
+            .unwrap_or(entity_id)
+            .to_string();
+        let entity_type = in_ours.map(|e| e.entity_type.as_str())
+            .or_else(|| in_theirs.map(|e| e.entity_type.as_str()))
+            .or_else(|| in_base.map(|e| e.entity_type.as_str()))
+            .unwrap_or("")
+            .to_string();
+        audit.push(EntityAudit {
+            name: entity_name,
+            entity_type,
+            resolution: strategy,
+        });
 
         match &resolution {
             ResolvedEntity::Conflict(ref c) => conflicts.push(c.clone()),
@@ -433,6 +493,7 @@ pub fn entity_merge_with_registry(
         conflicts,
         warnings,
         stats: stats.clone(),
+        audit,
     };
 
     // Floor: never produce more conflict markers than git merge-file.
@@ -464,7 +525,7 @@ fn resolve_entity(
     ours_all: &[SemanticEntity],
     theirs_all: &[SemanticEntity],
     stats: &mut MergeStats,
-) -> ResolvedEntity {
+) -> (ResolvedEntity, ResolutionStrategy) {
     // Helper: get region content (from file lines) for an entity, falling back to entity.content
     let region_content = |entity: &SemanticEntity, map: &HashMap<String, String>| -> String {
         map.get(&entity.id).cloned().unwrap_or_else(|| entity.content.clone())
@@ -489,24 +550,24 @@ fn resolve_entity(
                 (false, false) => {
                     // Neither changed
                     stats.entities_unchanged += 1;
-                    ResolvedEntity::Clean(entity_to_region_with_content(ours, &region_content(ours, ours_region_content)))
+                    (ResolvedEntity::Clean(entity_to_region_with_content(ours, &region_content(ours, ours_region_content))), ResolutionStrategy::Unchanged)
                 }
                 (true, false) => {
                     // Only ours changed
                     stats.entities_ours_only += 1;
-                    ResolvedEntity::Clean(entity_to_region_with_content(ours, &region_content(ours, ours_region_content)))
+                    (ResolvedEntity::Clean(entity_to_region_with_content(ours, &region_content(ours, ours_region_content))), ResolutionStrategy::OursOnly)
                 }
                 (false, true) => {
                     // Only theirs changed
                     stats.entities_theirs_only += 1;
-                    ResolvedEntity::Clean(entity_to_region_with_content(theirs, &region_content(theirs, theirs_region_content)))
+                    (ResolvedEntity::Clean(entity_to_region_with_content(theirs, &region_content(theirs, theirs_region_content))), ResolutionStrategy::TheirsOnly)
                 }
                 (true, true) => {
                     // Both changed — try intra-entity merge
                     if ours.content_hash == theirs.content_hash {
                         // Same change in both — take ours
                         stats.entities_both_changed_merged += 1;
-                        ResolvedEntity::Clean(entity_to_region_with_content(ours, &region_content(ours, ours_region_content)))
+                        (ResolvedEntity::Clean(entity_to_region_with_content(ours, &region_content(ours, ours_region_content))), ResolutionStrategy::ContentEqual)
                     } else {
                         // Try diffy 3-way merge on region content (preserves full syntax)
                         let base_rc = region_content(base, base_region_content);
@@ -519,25 +580,25 @@ fn resolve_entity(
                         // another makes semantic changes.
                         if is_whitespace_only_diff(&base_rc, &ours_rc) {
                             stats.entities_theirs_only += 1;
-                            return ResolvedEntity::Clean(entity_to_region_with_content(theirs, &theirs_rc));
+                            return (ResolvedEntity::Clean(entity_to_region_with_content(theirs, &theirs_rc)), ResolutionStrategy::TheirsOnly);
                         }
                         if is_whitespace_only_diff(&base_rc, &theirs_rc) {
                             stats.entities_ours_only += 1;
-                            return ResolvedEntity::Clean(entity_to_region_with_content(ours, &ours_rc));
+                            return (ResolvedEntity::Clean(entity_to_region_with_content(ours, &ours_rc)), ResolutionStrategy::OursOnly);
                         }
 
                         match diffy_merge(&base_rc, &ours_rc, &theirs_rc) {
                             Some(merged) => {
                                 stats.entities_both_changed_merged += 1;
                                 stats.resolved_via_diffy += 1;
-                                ResolvedEntity::Clean(EntityRegion {
+                                (ResolvedEntity::Clean(EntityRegion {
                                     entity_id: ours.id.clone(),
                                     entity_name: ours.name.clone(),
                                     entity_type: ours.entity_type.clone(),
                                     content: merged,
                                     start_line: ours.start_line,
                                     end_line: ours.end_line,
-                                })
+                                }), ResolutionStrategy::DiffyMerged)
                             }
                             None => {
                                 // Strategy 1: decorator/annotation-aware merge
@@ -545,14 +606,14 @@ fn resolve_entity(
                                 if let Some(merged) = try_decorator_aware_merge(&base_rc, &ours_rc, &theirs_rc) {
                                     stats.entities_both_changed_merged += 1;
                                     stats.resolved_via_diffy += 1;
-                                    return ResolvedEntity::Clean(EntityRegion {
+                                    return (ResolvedEntity::Clean(EntityRegion {
                                         entity_id: ours.id.clone(),
                                         entity_name: ours.name.clone(),
                                         entity_type: ours.entity_type.clone(),
                                         content: merged,
                                         start_line: ours.start_line,
                                         end_line: ours.end_line,
-                                    });
+                                    }), ResolutionStrategy::DecoratorMerged);
                                 }
 
                                 // Strategy 2: inner entity merge for container types
@@ -580,7 +641,7 @@ fn resolve_entity(
                                             stats.entities_conflicted += 1;
                                             stats.resolved_via_inner_merge += 1;
                                             let complexity = classify_conflict(Some(&base_rc), Some(&ours_rc), Some(&theirs_rc));
-                                            return ResolvedEntity::ScopedConflict {
+                                            return (ResolvedEntity::ScopedConflict {
                                                 content: inner.content,
                                                 conflict: EntityConflict {
                                                     entity_name: ours.name.clone(),
@@ -591,24 +652,24 @@ fn resolve_entity(
                                                     theirs_content: Some(theirs_rc),
                                                     base_content: Some(base_rc),
                                                 },
-                                            };
+                                            }, ResolutionStrategy::InnerMerged);
                                         } else {
                                             stats.entities_both_changed_merged += 1;
                                             stats.resolved_via_inner_merge += 1;
-                                            return ResolvedEntity::Clean(EntityRegion {
+                                            return (ResolvedEntity::Clean(EntityRegion {
                                                 entity_id: ours.id.clone(),
                                                 entity_name: ours.name.clone(),
                                                 entity_type: ours.entity_type.clone(),
                                                 content: inner.content,
                                                 start_line: ours.start_line,
                                                 end_line: ours.end_line,
-                                            });
+                                            }), ResolutionStrategy::InnerMerged);
                                         }
                                     }
                                 }
                                 stats.entities_conflicted += 1;
                                 let complexity = classify_conflict(Some(&base_rc), Some(&ours_rc), Some(&theirs_rc));
-                                ResolvedEntity::Conflict(EntityConflict {
+                                (ResolvedEntity::Conflict(EntityConflict {
                                     entity_name: ours.name.clone(),
                                     entity_type: ours.entity_type.clone(),
                                     kind: ConflictKind::BothModified,
@@ -616,7 +677,7 @@ fn resolve_entity(
                                     ours_content: Some(ours_rc),
                                     theirs_content: Some(theirs_rc),
                                     base_content: Some(base_rc),
-                                })
+                                }), ResolutionStrategy::ConflictBothModified)
                             }
                         }
                     }
@@ -633,7 +694,7 @@ fn resolve_entity(
                 let ours_rc = region_content(ours, ours_region_content);
                 let base_rc = region_content(_base, base_region_content);
                 let complexity = classify_conflict(Some(&base_rc), Some(&ours_rc), None);
-                ResolvedEntity::Conflict(EntityConflict {
+                (ResolvedEntity::Conflict(EntityConflict {
                     entity_name: ours.name.clone(),
                     entity_type: ours.entity_type.clone(),
                     kind: ConflictKind::ModifyDelete {
@@ -643,11 +704,11 @@ fn resolve_entity(
                     ours_content: Some(ours_rc),
                     theirs_content: None,
                     base_content: Some(base_rc),
-                })
+                }), ResolutionStrategy::ConflictModifyDelete)
             } else {
                 // Theirs deleted, ours unchanged → accept deletion
                 stats.entities_deleted += 1;
-                ResolvedEntity::Deleted
+                (ResolvedEntity::Deleted, ResolutionStrategy::Deleted)
             }
         }
 
@@ -660,7 +721,7 @@ fn resolve_entity(
                 let theirs_rc = region_content(theirs, theirs_region_content);
                 let base_rc = region_content(_base, base_region_content);
                 let complexity = classify_conflict(Some(&base_rc), None, Some(&theirs_rc));
-                ResolvedEntity::Conflict(EntityConflict {
+                (ResolvedEntity::Conflict(EntityConflict {
                     entity_name: theirs.name.clone(),
                     entity_type: theirs.entity_type.clone(),
                     kind: ConflictKind::ModifyDelete {
@@ -670,24 +731,24 @@ fn resolve_entity(
                     ours_content: None,
                     theirs_content: Some(theirs_rc),
                     base_content: Some(base_rc),
-                })
+                }), ResolutionStrategy::ConflictModifyDelete)
             } else {
                 // Ours deleted, theirs unchanged → accept deletion
                 stats.entities_deleted += 1;
-                ResolvedEntity::Deleted
+                (ResolvedEntity::Deleted, ResolutionStrategy::Deleted)
             }
         }
 
         // Entity only in ours (added by ours)
         (None, Some(ours), None) => {
             stats.entities_added_ours += 1;
-            ResolvedEntity::Clean(entity_to_region_with_content(ours, &region_content(ours, ours_region_content)))
+            (ResolvedEntity::Clean(entity_to_region_with_content(ours, &region_content(ours, ours_region_content))), ResolutionStrategy::AddedOurs)
         }
 
         // Entity only in theirs (added by theirs)
         (None, None, Some(theirs)) => {
             stats.entities_added_theirs += 1;
-            ResolvedEntity::Clean(entity_to_region_with_content(theirs, &region_content(theirs, theirs_region_content)))
+            (ResolvedEntity::Clean(entity_to_region_with_content(theirs, &region_content(theirs, theirs_region_content))), ResolutionStrategy::AddedTheirs)
         }
 
         // Entity in both ours and theirs but not base (both added)
@@ -695,14 +756,14 @@ fn resolve_entity(
             if ours.content_hash == theirs.content_hash {
                 // Same content added by both → take ours
                 stats.entities_added_ours += 1;
-                ResolvedEntity::Clean(entity_to_region_with_content(ours, &region_content(ours, ours_region_content)))
+                (ResolvedEntity::Clean(entity_to_region_with_content(ours, &region_content(ours, ours_region_content))), ResolutionStrategy::ContentEqual)
             } else {
                 // Different content → conflict
                 stats.entities_conflicted += 1;
                 let ours_rc = region_content(ours, ours_region_content);
                 let theirs_rc = region_content(theirs, theirs_region_content);
                 let complexity = classify_conflict(None, Some(&ours_rc), Some(&theirs_rc));
-                ResolvedEntity::Conflict(EntityConflict {
+                (ResolvedEntity::Conflict(EntityConflict {
                     entity_name: ours.name.clone(),
                     entity_type: ours.entity_type.clone(),
                     kind: ConflictKind::BothAdded,
@@ -710,18 +771,18 @@ fn resolve_entity(
                     ours_content: Some(ours_rc),
                     theirs_content: Some(theirs_rc),
                     base_content: None,
-                })
+                }), ResolutionStrategy::ConflictBothAdded)
             }
         }
 
         // Entity only in base (deleted by both)
         (Some(_), None, None) => {
             stats.entities_deleted += 1;
-            ResolvedEntity::Deleted
+            (ResolvedEntity::Deleted, ResolutionStrategy::Deleted)
         }
 
         // Should not happen
-        (None, None, None) => ResolvedEntity::Deleted,
+        (None, None, None) => (ResolvedEntity::Deleted, ResolutionStrategy::Deleted),
     }
 }
 
@@ -1196,6 +1257,7 @@ fn line_level_fallback(base: &str, ours: &str, theirs: &str, file_path: &str) ->
                 conflicts: vec![],
                 warnings: vec![],
                 stats: stats.clone(),
+                audit: vec![],
             })
         }
         Err(_) => {
@@ -1206,6 +1268,7 @@ fn line_level_fallback(base: &str, ours: &str, theirs: &str, file_path: &str) ->
                     conflicts: vec![],
                     warnings: vec![],
                     stats: stats.clone(),
+                    audit: vec![],
                 }),
                 Err(conflicted) => {
                     let _markers = conflicted.lines().filter(|l| l.starts_with("<<<<<<<")).count();
@@ -1224,6 +1287,7 @@ fn line_level_fallback(base: &str, ours: &str, theirs: &str, file_path: &str) ->
                         }],
                         warnings: vec![],
                         stats: s,
+                        audit: vec![],
                     })
                 }
             }
@@ -1294,6 +1358,7 @@ fn git_merge_file(base: &str, ours: &str, theirs: &str, stats: &mut MergeStats) 
                     conflicts: vec![],
                     warnings: vec![],
                     stats: stats.clone(),
+                    audit: vec![],
                 }
             } else {
                 // Exit >0 = conflicts (exit code = number of conflicts)
@@ -1311,6 +1376,7 @@ fn git_merge_file(base: &str, ours: &str, theirs: &str, stats: &mut MergeStats) 
                     }],
                     warnings: vec![],
                     stats: stats.clone(),
+                    audit: vec![],
                 }
             }
         }
@@ -1329,6 +1395,7 @@ fn diffy_fallback(base: &str, ours: &str, theirs: &str, stats: &mut MergeStats) 
                 conflicts: vec![],
                 warnings: vec![],
                 stats: stats.clone(),
+                audit: vec![],
             }
         }
         Err(conflicted) => {
@@ -1346,6 +1413,7 @@ fn diffy_fallback(base: &str, ours: &str, theirs: &str, stats: &mut MergeStats) 
                 }],
                 warnings: vec![],
                 stats: stats.clone(),
+                audit: vec![],
             }
         }
     }

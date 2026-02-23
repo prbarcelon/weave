@@ -115,3 +115,13 @@ pub struct DiffParams {
     #[schemars(description = "Optional: diff only this file")]
     pub file_path: Option<String>,
 }
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct MergeAuditParams {
+    #[schemars(description = "Base branch to merge from (e.g. 'main')")]
+    pub base_branch: String,
+    #[schemars(description = "Target branch to merge into (e.g. 'feature-x')")]
+    pub target_branch: String,
+    #[schemars(description = "Optional: audit only this file")]
+    pub file_path: Option<String>,
+}

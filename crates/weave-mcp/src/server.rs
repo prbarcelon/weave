@@ -863,6 +863,70 @@ impl WeaveServer {
         )]))
     }
 
+    #[tool(description = "Run a merge between two branches and return per-entity audit trail: what resolution strategy was used for each entity (unchanged, diffy_merged, inner_merged, conflict, etc.)")]
+    async fn weave_merge_audit(
+        &self,
+        Parameters(params): Parameters<MergeAuditParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let ctx = self
+            .get_context(params.file_path.as_deref())
+            .await
+            .map_err(internal_err)?;
+
+        let merge_base = git::find_merge_base(&params.base_branch, &params.target_branch)
+            .map_err(|e| internal_err(e.to_string()))?;
+
+        let files = if let Some(ref fp) = params.file_path {
+            let (rel, _) = Self::resolve_file_path(&ctx.repo_root, fp);
+            vec![rel]
+        } else {
+            git::get_changed_files(&merge_base, &params.base_branch, &params.target_branch)
+                .map_err(|e| internal_err(e.to_string()))?
+        };
+
+        let mut results = Vec::new();
+        for file in &files {
+            let base = git::git_show(&merge_base, file).unwrap_or_default();
+            let ours = git::git_show(&params.base_branch, file).unwrap_or_default();
+            let theirs = git::git_show(&params.target_branch, file).unwrap_or_default();
+
+            if ours == theirs || base == ours || base == theirs {
+                continue;
+            }
+
+            let merge_result = weave_core::entity_merge_with_registry(
+                &base,
+                &ours,
+                &theirs,
+                file,
+                &self.registry,
+            );
+
+            let audit: Vec<serde_json::Value> = merge_result
+                .audit
+                .iter()
+                .map(|a| serde_json::to_value(a).unwrap_or_default())
+                .collect();
+
+            results.push(serde_json::json!({
+                "file": file,
+                "clean": merge_result.is_clean(),
+                "confidence": merge_result.stats.confidence(),
+                "stats": merge_result.stats,
+                "entities": audit,
+            }));
+        }
+
+        let summary = serde_json::json!({
+            "files_analyzed": results.len(),
+            "results": results,
+        });
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&summary).unwrap_or_default(),
+        )]))
+    }
+
     #[tool(description = "Validate a merge for semantic risks: detect when auto-merged entities reference other entities that were also modified")]
     async fn weave_validate_merge(
         &self,
