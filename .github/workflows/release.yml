@@ -16,12 +16,16 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             os: macos-latest
+            cross: false
           - target: x86_64-apple-darwin
             os: macos-latest
+            cross: true
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+            cross: false
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
+            cross: true
 
     runs-on: ${{ matrix.os }}
 
@@ -36,21 +40,15 @@ jobs:
       - name: Install cross-compilation tools (aarch64 Linux)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
-          sudo dpkg --add-architecture arm64
-          sudo sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list.d/*.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ $(lsb_release -cs) main restricted universe multiverse" | sudo tee /etc/apt/sources.list.d/arm64.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ $(lsb_release -cs)-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu libssl-dev:arm64
+          sudo apt-get install -y gcc-aarch64-linux-gnu
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-          echo "PKG_CONFIG_SYSROOT_DIR=/usr/aarch64-linux-gnu" >> $GITHUB_ENV
-          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
 
       - name: Build weave-mcp
-        run: cargo build --release --target ${{ matrix.target }} --bin weave-mcp
+        run: cargo build --release --target ${{ matrix.target }} --bin weave-mcp ${{ matrix.cross && '--features vendored-openssl' || '' }}
 
       - name: Build weave-cli
-        run: cargo build --release --target ${{ matrix.target }} --bin weave
+        run: cargo build --release --target ${{ matrix.target }} --bin weave ${{ matrix.cross && '--features vendored-openssl' || '' }}
 
       - name: Package binaries
         run: |
