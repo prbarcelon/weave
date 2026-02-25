@@ -1,6 +1,19 @@
-# weave
+<p align="center">
+  <img src="assets/banner.svg" alt="weave" width="600" />
+</p>
 
-Entity-level semantic merge driver for Git. Resolves false conflicts that Git's line-based merge creates when multiple agents (or humans) edit the same file on different branches.
+<p align="center">
+  Resolves merge conflicts that Git can't by understanding code structure via tree-sitter.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Ataraxy-Labs/weave/releases/latest"><img src="https://img.shields.io/github/v/release/Ataraxy-Labs/weave?color=blue&label=release" alt="Release"></a>
+  <a href="https://github.com/Ataraxy-Labs/homebrew-tap"><img src="https://img.shields.io/badge/homebrew-ataraxy--labs/tap/weave-orange" alt="Homebrew"></a>
+  <img src="https://img.shields.io/badge/rust-stable-orange" alt="Rust">
+  <img src="https://img.shields.io/badge/tests-118_passing-brightgreen" alt="Tests">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow" alt="License"></a>
+  <img src="https://img.shields.io/badge/languages-11-blue" alt="Languages">
+</p>
 
 ## The Problem
 
