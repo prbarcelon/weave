@@ -11,6 +11,7 @@
   <a href="https://github.com/Ataraxy-Labs/homebrew-tap"><img src="https://img.shields.io/badge/homebrew-ataraxy--labs/tap/weave-orange" alt="Homebrew"></a>
   <img src="https://img.shields.io/badge/rust-stable-orange" alt="Rust">
   <img src="https://img.shields.io/badge/tests-118_passing-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/version-0.1.9-blue" alt="Version">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow" alt="License"></a>
   <img src="https://img.shields.io/badge/languages-11-blue" alt="Languages">
 </p>
@@ -76,9 +77,9 @@ Tested on real merge commits from major open-source repositories. For each merge
 | [Flask](https://github.com/pallets/flask) | Python | 56 | 14 | 0 | 57% | 54% |
 | [CPython](https://github.com/python/cpython) | C/Python | 256 | 7 | 0 | 29% | 13% |
 | [Go](https://github.com/golang/go) | Go | 1247 | 19 | 0 | 58% | 28% |
-| [TypeScript](https://github.com/microsoft/TypeScript) | TypeScript | 1639 | 4 | 3 | 75% | 4% |
+| [TypeScript](https://github.com/microsoft/TypeScript) | TypeScript | 2000 | 65 | 0 | 6% | 23% |
 
-Zero regressions on C, Python, and Go. Every "win" is a place where a developer had to manually resolve a false conflict that Weave handles automatically.
+Zero regressions across all repositories. Every "win" is a place where a developer had to manually resolve a false conflict that Weave handles automatically.
 
 ## Conflict Markers
 
