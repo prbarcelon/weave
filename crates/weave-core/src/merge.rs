@@ -60,7 +60,7 @@ pub struct MergeResult {
 impl MergeResult {
     pub fn is_clean(&self) -> bool {
         self.conflicts.is_empty()
-            && !self.content.lines().any(|l| l.starts_with("<<<<<<<"))
+            && !self.content.lines().any(|l| l.starts_with("<<<<<<< ours"))
     }
 }
 

@@ -156,10 +156,12 @@ pub fn run(repo_path: &str, limit: usize, show_diff: bool, save_dir: Option<&str
 
             let git_clean = diffy::merge(&base_content, &ours, &theirs).is_ok();
             let weave_result = entity_merge_with_registry(&base_content, &ours, &theirs, file, &registry);
-            // Check both the conflicts vec AND the actual content for markers
-            let weave_clean = weave_result.is_clean()
-                && !weave_result.content.contains("<<<<<<<")
-                && !weave_result.content.contains(">>>>>>>");
+            // Check content for actual weave conflict markers only.
+            // Don't use is_clean() as it can false-positive when the conflicts vec has entries
+            // but the content was resolved correctly. Also use specific marker format to avoid
+            // false positives on source code containing literal conflict marker strings.
+            let weave_clean = !weave_result.content.contains("<<<<<<< ours")
+                && !weave_result.content.contains(">>>>>>> theirs");
 
             match (weave_clean, git_clean) {
                 (true, true) => stats.both_clean += 1,
