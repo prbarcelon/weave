@@ -33,15 +33,18 @@ weave setup
 
 ## Key Features
 
-- 12 languages: TypeScript, TSX, JavaScript, Python, Go, Rust, Java, C, C++, Ruby, C#, Fortran
-- Rename detection via AST-normalized structural hashing
-- Commutative import merge (imports treated as sets, unioned and deduplicated)
+- 13 languages: TypeScript, TSX, JavaScript, Python, Go, Rust, Java, C, C++, Ruby, C#, PHP, Fortran
+- Rename detection via confidence-scored structural hashing (0.95/0.8/0.6 scoring)
+- Commutative import merge with group preservation (imports merged within blank-line groups)
 - Unordered class members (methods added at same position resolve cleanly)
 - Inner entity merge (both modify same class, methods merged independently)
 - Comment/decorator bundling (decorators move with their function)
 - ConGra conflict taxonomy (Text/Syntax/Functional) with resolution hints
+- Multi-line signature detection (paren depth tracking for conflict classification)
 - Cosmetic vs structural change detection
 - Post-merge semantic + parse validation
+- LRU entity cache in MCP server (500 entries, skips redundant tree-sitter parses)
+- Configurable: WEAVE_TIMEOUT (merge timeout), WEAVE_MAX_DUPLICATES (duplicate entity threshold)
 
 ## Architecture
 

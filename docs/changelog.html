@@ -87,6 +87,75 @@
 
     <section style="border-top: none; padding-top: 12px;">
 
+      <!-- v0.2.0: Performance & merge quality -->
+      <div class="commit">
+        <div class="commit-header">
+          <span class="commit-date">Mar 3, 2026</span>
+        </div>
+        <div class="commit-title">v0.2.0 — Performance overhaul, confidence-scored renames, LRU entity cache</div>
+        <div class="commit-tags">
+          <span class="commit-tag" style="background: #fb923c22; color: var(--orange);">perf</span>
+          <span class="commit-tag" style="background: #4ade8022; color: var(--green);">feature</span>
+          <span class="commit-tag" style="background: #22d3ee22; color: var(--cyan);">weave-mcp</span>
+          <span class="commit-tag" style="background: #fb923c22; color: var(--orange);">release</span>
+        </div>
+        <div class="commit-body">
+          <p>Focused release on merge speed, merge quality, and MCP responsiveness. 121 tests passing.</p>
+
+          <p><strong>Performance (weave-core)</strong></p>
+          <ul>
+            <li><strong>Static <code>ParserRegistry</code></strong>: tree-sitter parsers for all 11 languages are now created once via <code>LazyLock</code> and reused across merges. Previously each merge spawned a fresh registry.</li>
+            <li><strong>Borrowed references in hot paths</strong>: <code>build_region_content_map</code> returns <code>&amp;str</code> refs instead of cloning every region's content into owned Strings. Same for <code>body_hash</code> which now returns <code>u64</code> directly instead of formatting a hex String.</li>
+            <li><strong>Byte-level Sesame expansion</strong>: <code>expand_separators</code> processes bytes instead of chars. Separators (<code>{</code>, <code>}</code>, <code>;</code>) are ASCII, so UTF-8 iteration overhead is unnecessary.</li>
+          </ul>
+
+          <p><strong>Merge quality</strong></p>
+          <ul>
+            <li><strong>Confidence-scored rename detection</strong>: replaces the previous greedy first-match approach. Candidates are scored (0.95 for body_hash + same type + same parent, 0.8 for body_hash + same type, 0.6 for structural_hash), sorted by confidence, and assigned greedily. Rejects below 0.6. Fixes false renames when multiple entities share identical bodies.</li>
+            <li><strong>Multi-line signature detection</strong>: conflict classification now tracks parenthesis depth to find where the signature ends, instead of assuming line 0 is the entire signature. Functions with multi-line parameter lists are now correctly classified as Syntax (not Functional) when only parameters change.</li>
+            <li><strong>Import group preservation</strong>: <code>merge_imports_commutatively</code> now splits imports into groups by blank lines and merges within each group. New imports from theirs are placed in the matching group by source prefix. Previously all grouping was destroyed during merge.</li>
+          </ul>
+
+          <p><strong>MCP server</strong></p>
+          <ul>
+            <li><strong>LRU entity cache</strong>: 500-entry cache keyed on <code>(file_path, content_hash)</code>. Repeated calls to <code>weave_extract_entities</code>, <code>weave_claim_entity</code>, and <code>weave_status</code> skip tree-sitter parsing entirely on cache hit.</li>
+          </ul>
+
+          <p><strong>Configuration</strong></p>
+          <ul>
+            <li><code>WEAVE_TIMEOUT</code> env var: configurable merge timeout in seconds (default 5).</li>
+            <li><code>WEAVE_MAX_DUPLICATES</code> env var: configurable threshold for duplicate entity detection (default 10).</li>
+          </ul>
+
+          <div class="stats">
+            <span class="added">+377</span>
+            <span class="removed">-117</span>
+            <span class="files">5 files (merge.rs, conflict.rs, server.rs, Cargo.toml, Cargo.lock)</span>
+          </div>
+        </div>
+        <div class="lesson">
+          <div class="lesson-label">Key insight</div>
+          <p>The biggest performance win wasn't algorithmic. Creating 11 tree-sitter parsers per merge (one for each language) dominated the profile. A single <code>LazyLock&lt;ParserRegistry&gt;</code> eliminates that entirely. For allocation, returning <code>&amp;str</code> instead of <code>String</code> in hot paths (called per entity, per region) is the Rust equivalent of "stop copying data you already have." For rename detection, greedy matching on body_hash without scoring produces false positives when test files have many functions with identical boilerplate bodies. Confidence scoring + greedy-by-rank fixes this without changing the O(n) complexity.</p>
+        </div>
+      </div>
+
+      <!-- Commit: Address clippy warnings (community contribution) -->
+      <div class="commit">
+        <div class="commit-header">
+          <span class="commit-date">Mar 3, 2026</span>
+        </div>
+        <div class="commit-title">Fix clippy warnings (community contribution by @hobostay)</div>
+        <div class="commit-tags">
+          <span class="commit-tag" style="background: #f8717122; color: var(--red);">bugfix</span>
+        </div>
+        <div class="commit-body">
+          <ul>
+            <li>Remove unused fields <code>base_ref</code> and <code>head_ref</code> from <code>PrEvent</code> in weave-github webhook handler.</li>
+            <li>Remove unnecessary <code>i32</code> cast in bench.rs.</li>
+          </ul>
+        </div>
+      </div>
+
       <!-- Commit: Resolution hints, summary command, merge summary MCP tool -->
       <div class="commit">
         <div class="commit-header">

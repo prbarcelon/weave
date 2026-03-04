@@ -431,6 +431,31 @@
           <span class="cmd-doc-desc">Run merge benchmarks comparing weave vs git line-level merge</span>
         </div>
       </div>
+
+      <h3 style="font-size: 16px; color: var(--accent); margin: 32px 0 16px;">Environment variables</h3>
+
+      <table>
+        <thead>
+          <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code style="color:var(--cyan)">WEAVE_TIMEOUT</code></td>
+            <td><code>5</code></td>
+            <td>Merge timeout in seconds. If entity-level merge takes longer, weave falls back to line-level merge. Increase for very large files.</td>
+          </tr>
+          <tr>
+            <td><code style="color:var(--cyan)">WEAVE_MAX_DUPLICATES</code></td>
+            <td><code>10</code></td>
+            <td>Maximum same-name entities before skipping entity merge. Test files often have many similarly named functions. Increase to allow entity merge on such files.</td>
+          </tr>
+          <tr>
+            <td><code style="color:var(--cyan)">WEAVE_REPO</code></td>
+            <td><em>auto-detected</em></td>
+            <td>Override git repo root for the MCP server. Useful when running weave-mcp from outside a repository.</td>
+          </tr>
+        </tbody>
+      </table>
     </section>
 
     <footer>
