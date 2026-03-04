@@ -1,10 +1,14 @@
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use lru::LruCache;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, Content, ServerCapabilities, ServerInfo};
 use rmcp::{tool, tool_handler, tool_router, ServerHandler};
+use sem_core::model::entity::SemanticEntity;
 use sem_core::parser::graph::EntityGraph;
 use sem_core::parser::plugins::create_default_registry;
 use sem_core::parser::registry::ParserRegistry;
@@ -25,10 +29,21 @@ struct RepoContext {
     repo_root: PathBuf,
 }
 
+/// LRU cache for parsed entities keyed on (file_path, content_hash).
+/// Avoids redundant tree-sitter parses when the same file is accessed multiple times.
+type EntityCache = LruCache<(String, u64), Vec<SemanticEntity>>;
+
+fn content_hash_u64(content: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    content.hash(&mut hasher);
+    hasher.finish()
+}
+
 #[derive(Clone)]
 pub struct WeaveServer {
     context: Arc<Mutex<Option<RepoContext>>>,
     registry: Arc<ParserRegistry>,
+    entity_cache: Arc<Mutex<EntityCache>>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -166,6 +181,39 @@ impl WeaveServer {
         resolve_entity_id(content, file_path, entity_name, registry)
             .ok_or_else(|| format!("Entity '{}' not found in '{}'", entity_name, file_path))
     }
+
+    /// Extract entities with LRU caching. Cache hit skips tree-sitter parse entirely.
+    async fn cached_extract_entities(
+        &self,
+        content: &str,
+        rel_path: &str,
+    ) -> Vec<SemanticEntity> {
+        let hash = content_hash_u64(content);
+        let key = (rel_path.to_string(), hash);
+
+        // Check cache
+        {
+            let mut cache = self.entity_cache.lock().await;
+            if let Some(entities) = cache.get(&key) {
+                return entities.clone();
+            }
+        }
+
+        // Cache miss: parse
+        let plugin = match self.registry.get_plugin(rel_path) {
+            Some(p) => p,
+            None => return Vec::new(),
+        };
+        let entities = plugin.extract_entities(content, rel_path);
+
+        // Store in cache
+        {
+            let mut cache = self.entity_cache.lock().await;
+            cache.put(key, entities.clone());
+        }
+
+        entities
+    }
 }
 
 #[tool_router]
@@ -174,6 +222,9 @@ impl WeaveServer {
         Self {
             context: Arc::new(Mutex::new(None)),
             registry: Arc::new(create_default_registry()),
+            entity_cache: Arc::new(Mutex::new(LruCache::new(
+                std::num::NonZeroUsize::new(500).unwrap(),
+            ))),
             tool_router: Self::tool_router(),
         }
     }
@@ -191,12 +242,12 @@ impl WeaveServer {
             Self::resolve_file_path(&ctx.repo_root, &params.file_path);
         let content = Self::read_file_at(&abs_path, &rel_path).map_err(internal_err)?;
 
-        let plugin = self
-            .registry
-            .get_plugin(&rel_path)
-            .ok_or_else(|| internal_err(format!("No parser for file: {}", rel_path)))?;
-
-        let entities = plugin.extract_entities(&content, &rel_path);
+        let entities = self.cached_extract_entities(&content, &rel_path).await;
+        if entities.is_empty() {
+            if self.registry.get_plugin(&rel_path).is_none() {
+                return Err(internal_err(format!("No parser for file: {}", rel_path)));
+            }
+        }
         let result: Vec<serde_json::Value> = entities
             .iter()
             .map(|e| {
@@ -232,11 +283,7 @@ impl WeaveServer {
                 .map_err(internal_err)?;
 
         let mut state = ctx.state.lock().await;
-        let plugin = self
-            .registry
-            .get_plugin(&rel_path)
-            .ok_or_else(|| internal_err("No parser for file"))?;
-        let entities = plugin.extract_entities(&content, &rel_path);
+        let entities = self.cached_extract_entities(&content, &rel_path).await;
         if let Some(e) = entities.iter().find(|e| e.id == entity_id) {
             let _ = upsert_entity(
                 &mut state,
@@ -370,10 +417,7 @@ impl WeaveServer {
         let entities = get_entities_for_file(&state, &rel_path)
             .map_err(|e| internal_err(e.to_string()))?;
 
-        let plugin = self.registry.get_plugin(&rel_path);
-        let file_entities = plugin
-            .map(|p| p.extract_entities(&content, &rel_path))
-            .unwrap_or_default();
+        let file_entities = self.cached_extract_entities(&content, &rel_path).await;
 
         let result: Vec<serde_json::Value> = file_entities
             .iter()

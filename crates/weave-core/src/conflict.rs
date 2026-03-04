@@ -135,6 +135,40 @@ struct ChangeDimensions {
     functional: bool,
 }
 
+/// Find the end of the signature in a function/method definition.
+/// Handles multi-line parameter lists by tracking parenthesis depth.
+/// Returns the index (exclusive) of the first body line after the signature.
+fn find_signature_end(lines: &[&str]) -> usize {
+    if lines.is_empty() {
+        return 0;
+    }
+    let mut depth: i32 = 0;
+    for (i, line) in lines.iter().enumerate() {
+        for ch in line.chars() {
+            match ch {
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                '{' | ':' if depth <= 0 && i > 0 => {
+                    // Body start: signature ends at this line (inclusive)
+                    return i + 1;
+                }
+                _ => {}
+            }
+        }
+        // If we opened parens and closed them all on this line or previous,
+        // and the next line starts a body block, the signature ends here
+        if depth <= 0 && i > 0 {
+            // Check if this line ends the signature (has closing paren and body opener)
+            let trimmed = line.trim();
+            if trimmed.ends_with('{') || trimmed.ends_with(':') || trimmed.ends_with("->") {
+                return i + 1;
+            }
+        }
+    }
+    // Fallback: first line is signature
+    1
+}
+
 fn classify_change(base: &str, modified: &str) -> ChangeDimensions {
     if base == modified {
         return ChangeDimensions {
@@ -151,11 +185,17 @@ fn classify_change(base: &str, modified: &str) -> ChangeDimensions {
     let mut has_signature_change = false;
     let mut has_body_change = false;
 
-    // Check first line (usually signature) separately
-    let base_sig = base_lines.first().copied().unwrap_or("");
-    let mod_sig = modified_lines.first().copied().unwrap_or("");
+    // Find signature end for multi-line signatures
+    let base_sig_end = find_signature_end(&base_lines);
+    let mod_sig_end = find_signature_end(&modified_lines);
+
+    // Check signature (may span multiple lines)
+    let base_sig: Vec<&str> = base_lines.iter().take(base_sig_end).copied().collect();
+    let mod_sig: Vec<&str> = modified_lines.iter().take(mod_sig_end).copied().collect();
     if base_sig != mod_sig {
-        if is_comment_line(base_sig) || is_comment_line(mod_sig) {
+        let all_comments = base_sig.iter().all(|l| is_comment_line(l))
+            && mod_sig.iter().all(|l| is_comment_line(l));
+        if all_comments {
             has_comment_change = true;
         } else {
             has_signature_change = true;
@@ -163,8 +203,8 @@ fn classify_change(base: &str, modified: &str) -> ChangeDimensions {
     }
 
     // Check body lines
-    let base_body: Vec<&str> = base_lines.iter().skip(1).copied().collect();
-    let mod_body: Vec<&str> = modified_lines.iter().skip(1).copied().collect();
+    let base_body: Vec<&str> = base_lines.iter().skip(base_sig_end).copied().collect();
+    let mod_body: Vec<&str> = modified_lines.iter().skip(mod_sig_end).copied().collect();
 
     if base_body != mod_body {
         // Check if changes are only in comments
