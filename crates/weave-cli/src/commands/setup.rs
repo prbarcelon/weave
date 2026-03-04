@@ -5,7 +5,7 @@ use std::process::Command;
 use colored::Colorize;
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
-    "*.ts", "*.tsx", "*.js", "*.jsx", "*.py", "*.go", "*.rs",
+    "*.ts", "*.tsx", "*.js", "*.mjs", "*.cjs", "*.jsx", "*.py", "*.go", "*.rs",
     "*.java", "*.c", "*.h", "*.cpp", "*.cc", "*.cxx", "*.hpp", "*.hh", "*.hxx",
     "*.rb", "*.cs", "*.php",
     "*.f90", "*.f95", "*.f03", "*.f08",
