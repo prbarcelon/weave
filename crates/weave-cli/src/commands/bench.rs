@@ -1152,7 +1152,7 @@ func HandleDelete(w http.ResponseWriter, r *http.Request) {
         total_git_clean as f64 / total_scenarios as f64 * 100.0,
     );
 
-    let improvement = total_weave_clean as i32 - total_git_clean as i32;
+    let improvement = total_weave_clean - total_git_clean;
     if improvement > 0 {
         println!(
             "\nweave resolved {} additional merge(s) that git could not.",

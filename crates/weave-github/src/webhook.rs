@@ -79,8 +79,6 @@ pub struct PrEvent {
     pub pr_number: u64,
     pub head_sha: String,
     pub base_sha: String,
-    pub base_ref: String,
-    pub head_ref: String,
 }
 
 fn parse_pr_event(payload: &serde_json::Value) -> Option<PrEvent> {
@@ -90,8 +88,6 @@ fn parse_pr_event(payload: &serde_json::Value) -> Option<PrEvent> {
     let pr_number = pr["number"].as_u64()?;
     let head_sha = pr["head"]["sha"].as_str()?.to_string();
     let base_sha = pr["base"]["sha"].as_str()?.to_string();
-    let base_ref = pr["base"]["ref"].as_str()?.to_string();
-    let head_ref = pr["head"]["ref"].as_str()?.to_string();
 
     let (owner, repo) = repo_full_name.split_once('/')?;
     let owner = owner.to_string();
@@ -105,8 +101,6 @@ fn parse_pr_event(payload: &serde_json::Value) -> Option<PrEvent> {
         pr_number,
         head_sha,
         base_sha,
-        base_ref,
-        head_ref,
     })
 }
 
