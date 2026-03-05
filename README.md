@@ -101,7 +101,7 @@ You immediately know: what entity conflicted, what type it is, and why it confli
 
 ## Supported Languages
 
-TypeScript, JavaScript, Python, Go, Rust, JSON, YAML, TOML, Markdown. Falls back to standard line-level merge for unsupported file types.
+TypeScript, JavaScript, Python, Go, Rust, Java, C, C++, Ruby, C#, PHP, Swift, Fortran, JSON, YAML, TOML, CSV, Markdown. Falls back to standard line-level merge for unsupported file types.
 
 ## Setup
 

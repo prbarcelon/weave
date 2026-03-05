@@ -89,7 +89,7 @@ export default function Home() {
             <div>
               <h3 className="text-lg font-semibold mb-3" style={{ fontFamily: "var(--font-heading)" }}>1. Parse with tree-sitter</h3>
               <p className="text-gray-400 leading-relaxed">
-                All three versions (base, ours, theirs) are parsed into entity lists: functions, classes, methods, imports, constants, and types. 12 languages supported.
+                All three versions (base, ours, theirs) are parsed into entity lists: functions, classes, methods, imports, constants, and types. 14 languages supported.
               </p>
             </div>
             <div>
@@ -122,9 +122,9 @@ export default function Home() {
           </h2>
           <div className="grid md:grid-cols-3 gap-8">
             <div className="border border-white/10 rounded-lg p-6">
-              <h3 className="text-base font-semibold mb-3" style={{ fontFamily: "var(--font-heading)" }}>12 Languages</h3>
+              <h3 className="text-base font-semibold mb-3" style={{ fontFamily: "var(--font-heading)" }}>14 Languages</h3>
               <p className="text-gray-400 text-sm leading-relaxed">
-                TypeScript, TSX, JavaScript, Python, Go, Rust, Java, C, C++, Ruby, C#, Fortran. Each with language-specific entity extraction.
+                TypeScript, TSX, JavaScript, Python, Go, Rust, Java, C, C++, Ruby, C#, PHP, Swift, Fortran. Each with language-specific entity extraction.
               </p>
             </div>
             <div className="border border-white/10 rounded-lg p-6">

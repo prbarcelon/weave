@@ -36,7 +36,7 @@ Entity extraction via sem-core with xxHash64 structural hashing, parallel tree-s
 
 ## Key Features
 
-- 13 languages: TypeScript, TSX, JavaScript, Python, Go, Rust, Java, C, C++, Ruby, C#, PHP, Fortran
+- 14 languages: TypeScript, TSX, JavaScript, Python, Go, Rust, Java, C, C++, Ruby, C#, PHP, Swift, Fortran
 - Rename detection via confidence-scored structural hashing (0.95/0.8/0.6 scoring)
 - Commutative import merge with group preservation (imports merged within blank-line groups)
 - Unordered class members (methods added at same position resolve cleanly)
