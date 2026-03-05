@@ -163,3 +163,7 @@ Uses [sem-core](https://github.com/Ataraxy-Labs/sem) for entity extraction via t
 4. **Resolve** each entity: one-side-only changes win, both-changed attempts intra-entity 3-way merge
 5. **Reconstruct** file from merged regions, preserving ours-side ordering
 6. **Fallback** to line-level merge for files >1MB, binary files, or unsupported types
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Ataraxy-Labs/weave&type=Date)](https://star-history.com/#Ataraxy-Labs/weave&Date)
