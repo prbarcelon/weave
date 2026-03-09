@@ -1727,6 +1727,7 @@ fn is_container_entity_type(entity_type: &str) -> bool {
         entity_type,
         "class" | "interface" | "enum" | "impl" | "trait" | "module" | "impl_item" | "trait_item"
             | "struct" | "union" | "namespace" | "struct_item" | "struct_specifier"
+            | "variable" | "export"
     )
 }
 

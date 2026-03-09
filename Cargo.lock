@@ -3085,7 +3085,7 @@ dependencies = [
 
 [[package]]
 name = "weave-cli"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "clap",
  "colored",
@@ -3100,7 +3100,7 @@ dependencies = [
 
 [[package]]
 name = "weave-core"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "diffy",
  "pretty_assertions",
@@ -3112,7 +3112,7 @@ dependencies = [
 
 [[package]]
 name = "weave-crdt"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "automerge",
  "sem-core",
@@ -3125,7 +3125,7 @@ dependencies = [
 
 [[package]]
 name = "weave-driver"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "env_logger",
  "log",
@@ -3159,7 +3159,7 @@ dependencies = [
 
 [[package]]
 name = "weave-mcp"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "lru",
  "openssl",

@@ -1568,6 +1568,38 @@ fn rust_impl_scoped_conflict() {
     }
 }
 
+#[test]
+fn ts_object_literal_different_properties_added() {
+    let base = r#"const config = {
+    a: 1,
+    c: 3,
+};
+"#;
+    let ours = r#"const config = {
+    a: 1,
+    b: 2,
+    c: 3,
+};
+"#;
+    let theirs = r#"const config = {
+    a: 1,
+    c: 3,
+    d: 4,
+};
+"#;
+
+    let result = entity_merge(base, ours, theirs, "config.ts");
+    assert!(
+        result.is_clean(),
+        "Adding different properties to an object literal should auto-resolve. Conflicts: {:?}",
+        result.conflicts
+    );
+    assert!(result.content.contains("a: 1"));
+    assert!(result.content.contains("b: 2"));
+    assert!(result.content.contains("c: 3"));
+    assert!(result.content.contains("d: 4"));
+}
+
 /// Check if a needle appears only inside conflict marker blocks
 fn is_inside_conflict_markers(content: &str, needle: &str) -> bool {
     let mut in_conflict = false;
