@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use sem_core::model::entity::SemanticEntity;
 
+use crate::conflict::MarkerFormat;
 use crate::merge::ResolvedEntity;
 use crate::region::FileRegion;
 
@@ -16,6 +17,7 @@ pub fn reconstruct(
     ours_entity_map: &HashMap<&str, &SemanticEntity>,
     resolved_entities: &HashMap<String, ResolvedEntity>,
     merged_interstitials: &HashMap<String, String>,
+    marker_format: &MarkerFormat,
 ) -> String {
     let mut output = String::new();
 
@@ -63,7 +65,7 @@ pub fn reconstruct(
                             }
                         }
                         ResolvedEntity::Conflict(conflict) => {
-                            output.push_str(&conflict.to_conflict_markers());
+                            output.push_str(&conflict.to_conflict_markers(marker_format));
                         }
                         ResolvedEntity::ScopedConflict { content, .. } => {
                             output.push_str(content);
@@ -103,7 +105,7 @@ pub fn reconstruct(
                                 }
                                 ResolvedEntity::Conflict(conflict) => {
                                     output.push('\n');
-                                    output.push_str(&conflict.to_conflict_markers());
+                                    output.push_str(&conflict.to_conflict_markers(marker_format));
                                 }
                                 ResolvedEntity::ScopedConflict { content, .. } => {
                                     output.push('\n');
@@ -128,7 +130,7 @@ pub fn reconstruct(
         for theirs_entity in insertions {
             if !emitted_entities.contains(&theirs_entity.id) {
                 if let Some(resolved) = resolved_entities.get(&theirs_entity.id) {
-                    emit_resolved(&mut output, resolved);
+                    emit_resolved(&mut output, resolved, marker_format);
                 }
                 emitted_entities.insert(theirs_entity.id.clone());
             }
@@ -143,7 +145,7 @@ pub fn reconstruct(
         for theirs_entity in insertions {
             if !emitted_entities.contains(&theirs_entity.id) {
                 if let Some(resolved) = resolved_entities.get(&theirs_entity.id) {
-                    emit_resolved(&mut output, resolved);
+                    emit_resolved(&mut output, resolved, marker_format);
                 }
                 emitted_entities.insert(theirs_entity.id.clone());
             }
@@ -154,7 +156,7 @@ pub fn reconstruct(
 }
 
 /// Emit a resolved entity into the output (for theirs-only insertions).
-fn emit_resolved(output: &mut String, resolved: &ResolvedEntity) {
+fn emit_resolved(output: &mut String, resolved: &ResolvedEntity, marker_format: &MarkerFormat) {
     match resolved {
         ResolvedEntity::Clean(region) => {
             if !output.is_empty() && !output.ends_with('\n') {
@@ -171,7 +173,7 @@ fn emit_resolved(output: &mut String, resolved: &ResolvedEntity) {
                 output.push('\n');
             }
             output.push('\n');
-            output.push_str(&conflict.to_conflict_markers());
+            output.push_str(&conflict.to_conflict_markers(marker_format));
         }
         ResolvedEntity::ScopedConflict { content, .. } => {
             if !output.is_empty() && !output.ends_with('\n') {

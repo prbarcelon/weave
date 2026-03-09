@@ -1,7 +1,7 @@
 use std::fs;
 use std::process;
 
-use weave_core::entity_merge;
+use weave_core::{entity_merge_fmt, MarkerFormat};
 
 fn main() {
     env_logger::init();
@@ -12,6 +12,7 @@ fn main() {
     // Supported flags: -o <path> / --output <path>, --audit
     let mut output_override: Option<String> = None;
     let mut audit_enabled = false;
+    let mut marker_length: Option<usize> = None;
     let mut positional: Vec<String> = Vec::new();
     let mut i = 1;
     while i < raw_args.len() {
@@ -30,7 +31,9 @@ fn main() {
                 i += 1;
             }
             "-l" | "--marker-length" => {
-                // Accept and skip (we use our own markers)
+                if i + 1 < raw_args.len() {
+                    marker_length = raw_args[i + 1].parse::<usize>().ok();
+                }
                 i += 2;
             }
             "-p" | "--path" => {
@@ -63,7 +66,9 @@ fn main() {
     let base_path = &positional[0];
     let ours_path = &positional[1];
     let theirs_path = &positional[2];
-    // positional[3] is marker size (unused, we use our own markers)
+    // Git calls: %O %A %B %L %P (positional[3] = marker size, positional[4] = file path)
+    // jj calls: base left right -o output -l marker_length -p path (flags already parsed above)
+    // Note: positional[3] from git (%L) does NOT trigger standard markers; only the -l flag does.
     let file_path = if positional.len() > 4 {
         positional[4].clone()
     } else if positional.len() > 3 {
@@ -102,7 +107,13 @@ fn main() {
     }
 
     // Run entity merge
-    let result = entity_merge(&base, &ours, &theirs, &file_path);
+    // When -l is passed (by jj or other tools), use standard git-compatible markers.
+    // Otherwise (git merge driver), use enhanced markers with entity metadata.
+    let fmt = match marker_length {
+        Some(len) => MarkerFormat::standard(len),
+        None => MarkerFormat::default(),
+    };
+    let result = entity_merge_fmt(&base, &ours, &theirs, &file_path, &fmt);
 
     // Write result: to -o path if specified (jj), else to ours path (git convention: %A)
     let write_path = output_override.as_deref().unwrap_or(ours_path);

@@ -15,7 +15,7 @@ use sem_core::parser::registry::ParserRegistry;
 /// Avoids recreating 11 tree-sitter language parsers per merge call.
 static PARSER_REGISTRY: LazyLock<ParserRegistry> = LazyLock::new(create_default_registry);
 
-use crate::conflict::{classify_conflict, ConflictKind, EntityConflict, MergeStats};
+use crate::conflict::{classify_conflict, ConflictKind, EntityConflict, MarkerFormat, MergeStats};
 use crate::region::{extract_regions, EntityRegion, FileRegion};
 use crate::validate::SemanticWarning;
 use crate::reconstruct::reconstruct;
@@ -97,6 +97,17 @@ pub fn entity_merge(
     theirs: &str,
     file_path: &str,
 ) -> MergeResult {
+    entity_merge_fmt(base, ours, theirs, file_path, &MarkerFormat::default())
+}
+
+/// Perform entity-level 3-way merge with configurable marker format.
+pub fn entity_merge_fmt(
+    base: &str,
+    ours: &str,
+    theirs: &str,
+    file_path: &str,
+    marker_format: &MarkerFormat,
+) -> MergeResult {
     let timeout_secs = std::env::var("WEAVE_TIMEOUT")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
@@ -108,10 +119,11 @@ pub fn entity_merge(
     let ours_owned = ours.to_string();
     let theirs_owned = theirs.to_string();
     let path_owned = file_path.to_string();
+    let fmt_owned = marker_format.clone();
 
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let result = entity_merge_with_registry(&base_owned, &ours_owned, &theirs_owned, &path_owned, &PARSER_REGISTRY);
+        let result = entity_merge_with_registry(&base_owned, &ours_owned, &theirs_owned, &path_owned, &PARSER_REGISTRY, &fmt_owned);
         let _ = tx.send(result);
     });
 
@@ -132,6 +144,7 @@ pub fn entity_merge_with_registry(
     theirs: &str,
     file_path: &str,
     registry: &ParserRegistry,
+    marker_format: &MarkerFormat,
 ) -> MergeResult {
     // Guard: if any input already contains conflict markers (e.g. AU/AA conflicts
     // where git bakes markers into stage blobs), report as conflict immediately.
@@ -426,6 +439,7 @@ pub fn entity_merge_with_registry(
             &ours_all,
             &theirs_all,
             &mut stats,
+            marker_format,
         );
 
         // Build audit entry from entity info
@@ -463,7 +477,7 @@ pub fn entity_merge_with_registry(
 
     // Merge interstitial regions
     let (merged_interstitials, interstitial_conflicts) =
-        merge_interstitials(&base_regions, &ours_regions, &theirs_regions);
+        merge_interstitials(&base_regions, &ours_regions, &theirs_regions, marker_format);
     stats.entities_conflicted += interstitial_conflicts.len();
     conflicts.extend(interstitial_conflicts);
 
@@ -475,6 +489,7 @@ pub fn entity_merge_with_registry(
         &ours_entity_map,
         &resolved_entities,
         &merged_interstitials,
+        marker_format,
     );
 
     // Post-merge cleanup: remove duplicate lines and normalize blank lines
@@ -533,6 +548,7 @@ fn resolve_entity(
     ours_all: &[SemanticEntity],
     theirs_all: &[SemanticEntity],
     stats: &mut MergeStats,
+    marker_format: &MarkerFormat,
 ) -> (ResolvedEntity, ResolutionStrategy) {
     // Helper: get region content (from file lines) for an entity, falling back to entity.content
     let region_content = |entity: &SemanticEntity, map: &HashMap<&str, &str>| -> String {
@@ -641,6 +657,7 @@ fn resolve_entity(
                                         &base_rc, &ours_rc, &theirs_rc,
                                         &base_children, &ours_children, &theirs_children,
                                         base_start, ours_start, theirs_start,
+                                        marker_format,
                                     ) {
                                         if inner.has_conflicts {
                                             // Inner merge produced per-member conflicts:
@@ -980,6 +997,7 @@ fn merge_interstitials(
     base_regions: &[FileRegion],
     ours_regions: &[FileRegion],
     theirs_regions: &[FileRegion],
+    marker_format: &MarkerFormat,
 ) -> (HashMap<String, String>, Vec<EntityConflict>) {
     let base_map: HashMap<&str, &str> = base_regions
         .iter()
@@ -1057,7 +1075,7 @@ fn merge_interstitials(
                             theirs_content: Some(theirs_content.to_string()),
                             base_content: Some(base_content.to_string()),
                         };
-                        merged.insert(key.to_string(), conflict.to_conflict_markers());
+                        merged.insert(key.to_string(), conflict.to_conflict_markers(marker_format));
                         interstitial_conflicts.push(conflict);
                     }
                 }
@@ -1812,6 +1830,65 @@ fn children_to_chunks(
     chunks
 }
 
+/// Generate a scoped conflict marker for a single member within a container merge.
+fn scoped_conflict_marker(
+    name: &str,
+    ours: Option<&str>,
+    theirs: Option<&str>,
+    ours_deleted: bool,
+    theirs_deleted: bool,
+    fmt: &MarkerFormat,
+) -> String {
+    let open = "<".repeat(fmt.marker_length);
+    let sep = "=".repeat(fmt.marker_length);
+    let close = ">".repeat(fmt.marker_length);
+
+    let mut out = String::new();
+
+    // Opening marker
+    if fmt.enhanced {
+        if ours_deleted {
+            out.push_str(&format!("{} ours ({} deleted)\n", open, name));
+        } else {
+            out.push_str(&format!("{} ours ({})\n", open, name));
+        }
+    } else {
+        out.push_str(&format!("{} ours\n", open));
+    }
+
+    // Ours content
+    if let Some(o) = ours {
+        out.push_str(o);
+        if !o.ends_with('\n') {
+            out.push('\n');
+        }
+    }
+
+    // Separator
+    out.push_str(&format!("{}\n", sep));
+
+    // Theirs content
+    if let Some(t) = theirs {
+        out.push_str(t);
+        if !t.ends_with('\n') {
+            out.push('\n');
+        }
+    }
+
+    // Closing marker
+    if fmt.enhanced {
+        if theirs_deleted {
+            out.push_str(&format!("{} theirs ({} deleted)", close, name));
+        } else {
+            out.push_str(&format!("{} theirs ({})", close, name));
+        }
+    } else {
+        out.push_str(&format!("{} theirs", close));
+    }
+
+    out
+}
+
 /// Try recursive inner entity merge for container types (classes, impls, etc.).
 ///
 /// Inspired by LastMerge (arXiv:2507.19687): class members are "unordered children" —
@@ -1830,6 +1907,7 @@ fn try_inner_entity_merge(
     base_start_line: usize,
     ours_start_line: usize,
     theirs_start_line: usize,
+    marker_format: &MarkerFormat,
 ) -> Option<InnerMergeResult> {
     // Try sem-core child entities first (tree-sitter-accurate boundaries),
     // fall back to indentation heuristic if children aren't available.
@@ -1918,19 +1996,7 @@ fn try_inner_entity_merge(
                     } else {
                         // Emit per-member conflict markers
                         has_conflict = true;
-                        let mut conflict = String::new();
-                        conflict.push_str(&format!("<<<<<<< ours ({})\n", name));
-                        conflict.push_str(o);
-                        if !o.ends_with('\n') {
-                            conflict.push('\n');
-                        }
-                        conflict.push_str("=======\n");
-                        conflict.push_str(t);
-                        if !t.ends_with('\n') {
-                            conflict.push('\n');
-                        }
-                        conflict.push_str(&format!(">>>>>>> theirs ({})", name));
-                        merged_members.push(conflict);
+                        merged_members.push(scoped_conflict_marker(name, Some(o), Some(t), false, false, marker_format));
                     }
                 }
             }
@@ -1941,15 +2007,7 @@ fn try_inner_entity_merge(
                 } else {
                     // Ours modified, theirs deleted → per-member conflict
                     has_conflict = true;
-                    let mut conflict = String::new();
-                    conflict.push_str(&format!("<<<<<<< ours ({})\n", name));
-                    conflict.push_str(o);
-                    if !o.ends_with('\n') {
-                        conflict.push('\n');
-                    }
-                    conflict.push_str("=======\n");
-                    conflict.push_str(&format!(">>>>>>> theirs ({} deleted)", name));
-                    merged_members.push(conflict);
+                    merged_members.push(scoped_conflict_marker(name, Some(o), None, false, true, marker_format));
                 }
             }
             // Deleted by ours, theirs unchanged or not in base
@@ -1959,15 +2017,7 @@ fn try_inner_entity_merge(
                 } else {
                     // Theirs modified, ours deleted → per-member conflict
                     has_conflict = true;
-                    let mut conflict = String::new();
-                    conflict.push_str(&format!("<<<<<<< ours ({} deleted)\n", name));
-                    conflict.push_str("=======\n");
-                    conflict.push_str(t);
-                    if !t.ends_with('\n') {
-                        conflict.push('\n');
-                    }
-                    conflict.push_str(&format!(">>>>>>> theirs ({})", name));
-                    merged_members.push(conflict);
+                    merged_members.push(scoped_conflict_marker(name, None, Some(t), true, false, marker_format));
                 }
             }
             // Added by ours only
@@ -1984,19 +2034,7 @@ fn try_inner_entity_merge(
                     merged_members.push(o.to_string());
                 } else {
                     has_conflict = true;
-                    let mut conflict = String::new();
-                    conflict.push_str(&format!("<<<<<<< ours ({})\n", name));
-                    conflict.push_str(o);
-                    if !o.ends_with('\n') {
-                        conflict.push('\n');
-                    }
-                    conflict.push_str("=======\n");
-                    conflict.push_str(t);
-                    if !t.ends_with('\n') {
-                        conflict.push('\n');
-                    }
-                    conflict.push_str(&format!(">>>>>>> theirs ({})", name));
-                    merged_members.push(conflict);
+                    merged_members.push(scoped_conflict_marker(name, Some(o), Some(t), false, false, marker_format));
                 }
             }
             // Deleted by both
@@ -2043,7 +2081,7 @@ fn try_inner_entity_merge(
             if !bc.is_empty() || !oc.is_empty() || !tc.is_empty() {
                 let fallback = try_inner_merge_with_chunks(
                     &bc, &oc, &tc, ours, ours_header, ours_footer,
-                    has_multiline_members,
+                    has_multiline_members, marker_format,
                 );
                 if let Some(fb) = fallback {
                     if !fb.has_conflicts {
@@ -2069,6 +2107,7 @@ fn try_inner_merge_with_chunks(
     ours_header: &str,
     ours_footer: &str,
     has_multiline_hint: bool,
+    marker_format: &MarkerFormat,
 ) -> Option<InnerMergeResult> {
     let base_map: HashMap<&str, &str> = base_chunks.iter().map(|c| (c.name.as_str(), c.content.as_str())).collect();
     let ours_map: HashMap<&str, &str> = ours_chunks.iter().map(|c| (c.name.as_str(), c.content.as_str())).collect();
@@ -2109,15 +2148,7 @@ fn try_inner_merge_with_chunks(
                     merged_members.push(merged);
                 } else {
                     has_conflict = true;
-                    let mut conflict = String::new();
-                    conflict.push_str(&format!("<<<<<<< ours ({})\n", name));
-                    conflict.push_str(o);
-                    if !o.ends_with('\n') { conflict.push('\n'); }
-                    conflict.push_str("=======\n");
-                    conflict.push_str(t);
-                    if !t.ends_with('\n') { conflict.push('\n'); }
-                    conflict.push_str(&format!(">>>>>>> theirs ({})", name));
-                    merged_members.push(conflict);
+                    merged_members.push(scoped_conflict_marker(name, Some(o), Some(t), false, false, marker_format));
                 }
             }
             (Some(b), Some(o), None) => {
@@ -2133,7 +2164,7 @@ fn try_inner_merge_with_chunks(
                     merged_members.push(o.to_string());
                 } else {
                     has_conflict = true;
-                    merged_members.push(format!("<<<<<<< ours ({})\n{}=======\n{}>>>>>>> theirs ({})", name, o, t, name));
+                    merged_members.push(scoped_conflict_marker(name, Some(o), Some(t), false, false, marker_format));
                 }
             }
             (Some(_), None, None) | (None, None, None) => {}

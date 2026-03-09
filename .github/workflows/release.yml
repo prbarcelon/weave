@@ -50,6 +50,9 @@ jobs:
       - name: Build weave-cli
         run: cargo build --release --target ${{ matrix.target }} --bin weave ${{ matrix.cross && '--features vendored-openssl' || '' }}
 
+      - name: Build weave-driver
+        run: cargo build --release --target ${{ matrix.target }} --bin weave-driver ${{ matrix.cross && '--features vendored-openssl' || '' }}
+
       - name: Package binaries
         run: |
           mkdir -p dist
@@ -57,6 +60,7 @@ jobs:
 
           tar czf ../../../dist/weave-mcp-${{ matrix.target }}.tar.gz weave-mcp
           tar czf ../../../dist/weave-cli-${{ matrix.target }}.tar.gz weave
+          tar czf ../../../dist/weave-driver-${{ matrix.target }}.tar.gz weave-driver
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

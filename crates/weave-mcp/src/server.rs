@@ -550,6 +550,7 @@ impl WeaveServer {
                 &theirs,
                 file,
                 &self.registry,
+                &weave_core::MarkerFormat::default(),
             );
 
             let conflicts: Vec<serde_json::Value> = merge_result
@@ -944,6 +945,7 @@ impl WeaveServer {
                 &theirs,
                 file,
                 &self.registry,
+                &weave_core::MarkerFormat::default(),
             );
 
             let audit: Vec<serde_json::Value> = merge_result

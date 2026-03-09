@@ -1,6 +1,30 @@
 use std::fmt;
 use serde::Serialize;
 
+/// Controls conflict marker format: enhanced (weave metadata) or standard (git-compatible).
+///
+/// When `enhanced` is true (default for git merge driver), markers include entity metadata,
+/// ConGra complexity classification, and resolution hints.
+/// When `enhanced` is false (triggered by `-l` flag from jj/other tools), markers use
+/// the standard git format that tools can parse: `<<<<<<< ours` / `=======` / `>>>>>>> theirs`.
+#[derive(Debug, Clone)]
+pub struct MarkerFormat {
+    pub marker_length: usize,
+    pub enhanced: bool,
+}
+
+impl Default for MarkerFormat {
+    fn default() -> Self {
+        Self { marker_length: 7, enhanced: true }
+    }
+}
+
+impl MarkerFormat {
+    pub fn standard(marker_length: usize) -> Self {
+        Self { marker_length, enhanced: false }
+    }
+}
+
 /// The type of conflict between two branches' changes to an entity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConflictKind {
@@ -256,39 +280,71 @@ pub struct EntityConflict {
 }
 
 impl EntityConflict {
-    /// Render this conflict as enhanced conflict markers.
-    pub fn to_conflict_markers(&self) -> String {
-        let confidence = match &self.complexity {
-            ConflictComplexity::Text => "high",
-            ConflictComplexity::Syntax => "medium",
-            ConflictComplexity::Functional => "medium",
-            ConflictComplexity::TextSyntax => "medium",
-            ConflictComplexity::TextFunctional => "medium",
-            ConflictComplexity::SyntaxFunctional => "low",
-            ConflictComplexity::TextSyntaxFunctional => "low",
-            ConflictComplexity::Unknown => "unknown",
-        };
-        let label = format!(
-            "{} `{}` ({}, confidence: {})",
-            self.entity_type, self.entity_name, self.complexity, confidence
-        );
-        let hint = self.complexity.resolution_hint();
+    /// Render this conflict as conflict markers.
+    ///
+    /// When `fmt.enhanced` is true, includes entity metadata and resolution hints.
+    /// When false, outputs standard git-compatible markers.
+    pub fn to_conflict_markers(&self, fmt: &MarkerFormat) -> String {
         let ours = self.ours_content.as_deref().unwrap_or("");
         let theirs = self.theirs_content.as_deref().unwrap_or("");
+        let open = "<".repeat(fmt.marker_length);
+        let sep = "=".repeat(fmt.marker_length);
+        let close = ">".repeat(fmt.marker_length);
 
         let mut out = String::new();
-        out.push_str(&format!("<<<<<<< ours \u{2014} {}\n", label));
-        out.push_str(&format!("// hint: {}\n", hint));
+
+        if fmt.enhanced {
+            let confidence = match &self.complexity {
+                ConflictComplexity::Text => "high",
+                ConflictComplexity::Syntax => "medium",
+                ConflictComplexity::Functional => "medium",
+                ConflictComplexity::TextSyntax => "medium",
+                ConflictComplexity::TextFunctional => "medium",
+                ConflictComplexity::SyntaxFunctional => "low",
+                ConflictComplexity::TextSyntaxFunctional => "low",
+                ConflictComplexity::Unknown => "unknown",
+            };
+            let label = format!(
+                "{} `{}` ({}, confidence: {})",
+                self.entity_type, self.entity_name, self.complexity, confidence
+            );
+            let hint = self.complexity.resolution_hint();
+            out.push_str(&format!("{} ours \u{2014} {}\n", open, label));
+            out.push_str(&format!("// hint: {}\n", hint));
+        } else {
+            out.push_str(&format!("{} ours\n", open));
+        }
+
         out.push_str(ours);
         if !ours.is_empty() && !ours.ends_with('\n') {
             out.push('\n');
         }
-        out.push_str("=======\n");
+        out.push_str(&format!("{}\n", sep));
         out.push_str(theirs);
         if !theirs.is_empty() && !theirs.ends_with('\n') {
             out.push('\n');
         }
-        out.push_str(&format!(">>>>>>> theirs \u{2014} {}\n", label));
+
+        if fmt.enhanced {
+            let confidence = match &self.complexity {
+                ConflictComplexity::Text => "high",
+                ConflictComplexity::Syntax => "medium",
+                ConflictComplexity::Functional => "medium",
+                ConflictComplexity::TextSyntax => "medium",
+                ConflictComplexity::TextFunctional => "medium",
+                ConflictComplexity::SyntaxFunctional => "low",
+                ConflictComplexity::TextSyntaxFunctional => "low",
+                ConflictComplexity::Unknown => "unknown",
+            };
+            let label = format!(
+                "{} `{}` ({}, confidence: {})",
+                self.entity_type, self.entity_name, self.complexity, confidence
+            );
+            out.push_str(&format!("{} theirs \u{2014} {}\n", close, label));
+        } else {
+            out.push_str(&format!("{} theirs\n", close));
+        }
+
         out
     }
 }
@@ -559,7 +615,7 @@ mod tests {
             theirs_content: Some("return 2;".to_string()),
             base_content: Some("return 0;".to_string()),
         };
-        let markers = conflict.to_conflict_markers();
+        let markers = conflict.to_conflict_markers(&MarkerFormat::default());
         assert!(markers.contains("confidence: medium"), "Markers should contain confidence: {}", markers);
         assert!(markers.contains("// hint: Logic changed on both sides"), "Markers should contain hint: {}", markers);
     }
@@ -587,7 +643,7 @@ mod tests {
             theirs_content: Some("fn process() { return 2; }".to_string()),
             base_content: Some("fn process() { return 0; }".to_string()),
         };
-        let markers = conflict.to_conflict_markers();
+        let markers = conflict.to_conflict_markers(&MarkerFormat::default());
 
         let parsed = parse_weave_conflicts(&markers);
         assert_eq!(parsed.len(), 1);
@@ -620,13 +676,49 @@ mod tests {
             theirs_content: Some("class Bar { y() {} }".to_string()),
             base_content: None,
         };
-        let content = format!("some code\n{}\nmore code\n{}\nend", c1.to_conflict_markers(), c2.to_conflict_markers());
+        let content = format!("some code\n{}\nmore code\n{}\nend", c1.to_conflict_markers(&MarkerFormat::default()), c2.to_conflict_markers(&MarkerFormat::default()));
         let parsed = parse_weave_conflicts(&content);
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].entity_name, "foo");
         assert_eq!(parsed[0].complexity, ConflictComplexity::Text);
         assert_eq!(parsed[1].entity_name, "Bar");
         assert_eq!(parsed[1].complexity, ConflictComplexity::SyntaxFunctional);
+    }
+
+    #[test]
+    fn test_standard_markers_no_metadata() {
+        let conflict = EntityConflict {
+            entity_name: "foo".to_string(),
+            entity_type: "function".to_string(),
+            kind: ConflictKind::BothModified,
+            complexity: ConflictComplexity::Functional,
+            ours_content: Some("return 1;".to_string()),
+            theirs_content: Some("return 2;".to_string()),
+            base_content: Some("return 0;".to_string()),
+        };
+        let markers = conflict.to_conflict_markers(&MarkerFormat::standard(7));
+        assert_eq!(markers, "<<<<<<< ours\nreturn 1;\n=======\nreturn 2;\n>>>>>>> theirs\n");
+        // No em-dash, no hint, no metadata
+        assert!(!markers.contains('\u{2014}'));
+        assert!(!markers.contains("hint"));
+        assert!(!markers.contains("confidence"));
+    }
+
+    #[test]
+    fn test_standard_markers_custom_length() {
+        let conflict = EntityConflict {
+            entity_name: "foo".to_string(),
+            entity_type: "function".to_string(),
+            kind: ConflictKind::BothModified,
+            complexity: ConflictComplexity::Functional,
+            ours_content: Some("a".to_string()),
+            theirs_content: Some("b".to_string()),
+            base_content: None,
+        };
+        let markers = conflict.to_conflict_markers(&MarkerFormat::standard(11));
+        assert!(markers.starts_with("<<<<<<<<<<<")); // 11 <'s
+        assert!(markers.contains("===========")); // 11 ='s
+        assert!(markers.contains(">>>>>>>>>>>")); // 11 >'s
     }
 }
 

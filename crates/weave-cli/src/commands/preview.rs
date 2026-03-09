@@ -40,6 +40,7 @@ pub fn run(
             &theirs_content,
             file,
             &registry,
+            &weave_core::MarkerFormat::default(),
         );
 
         let status = if result.is_clean() {

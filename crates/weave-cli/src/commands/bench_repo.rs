@@ -155,7 +155,7 @@ pub fn run(repo_path: &str, limit: usize, show_diff: bool, save_dir: Option<&str
             stats.files_tested += 1;
 
             let git_clean = diffy::merge(&base_content, &ours, &theirs).is_ok();
-            let weave_result = entity_merge_with_registry(&base_content, &ours, &theirs, file, &registry);
+            let weave_result = entity_merge_with_registry(&base_content, &ours, &theirs, file, &registry, &weave_core::MarkerFormat::default());
             // Check content for actual weave conflict markers only.
             // Don't use is_clean() as it can false-positive when the conflicts vec has entries
             // but the content was resolved correctly. Also use specific marker format to avoid
