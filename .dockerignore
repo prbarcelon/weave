@@ -1,8 +1,11 @@
 target/
-.git/
+.git*/
+.gitignore
+.dockerignore
 site/
 benchmarks/
 docs/
 Formula/
 *.pem
 *.dmg
+fly.toml
