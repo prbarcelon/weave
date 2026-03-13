@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/Ataraxy-Labs/weave/releases/latest"><img src="https://img.shields.io/github/v/release/Ataraxy-Labs/weave?color=blue&label=release" alt="Release"></a>
-  <a href="https://github.com/Ataraxy-Labs/homebrew-tap"><img src="https://img.shields.io/badge/homebrew-ataraxy--labs/tap/weave-orange" alt="Homebrew"></a>
+  <a href="https://formulae.brew.sh/formula/weave"><img src="https://img.shields.io/badge/homebrew-weave-orange" alt="Homebrew"></a>
   <img src="https://img.shields.io/badge/rust-stable-orange" alt="Rust">
   <img src="https://img.shields.io/badge/tests-124_passing-brightgreen" alt="Tests">
   <img src="https://img.shields.io/badge/version-0.2.3-blue" alt="Version">
@@ -104,22 +104,35 @@ You immediately know: what entity conflicted, what type it is, and why it confli
 
 TypeScript, TSX, JavaScript, Python, Go, Rust, Java, C, C++, Ruby, C#, PHP, Swift, Kotlin, Elixir, Bash, HCL/Terraform, Fortran, Vue, JSON, YAML, TOML, CSV, Markdown. Falls back to standard line-level merge for unsupported file types.
 
-## Setup
+## Install
 
 ```bash
-# Build
-cargo build --release
-
-# In your repo:
-./target/release/weave-cli setup
-
-# Or manually:
-git config merge.weave.name "Entity-level semantic merge"
-git config merge.weave.driver "/path/to/weave-driver %O %A %B %L %P"
-echo "*.ts *.tsx *.js *.py *.go *.rs *.java *.c *.cpp *.rb *.cs *.php *.swift *.kt *.ex *.sh *.hcl *.tf *.f90 *.vue *.json *.yaml *.toml *.md merge=weave" >> .gitattributes
+brew install weave
 ```
 
-Then use Git normally. `git merge` will use weave automatically for configured file types.
+Or build from source (requires Rust):
+
+```bash
+cargo build --release
+```
+
+## Setup
+
+In any Git repo:
+
+```bash
+weave setup
+```
+
+This configures Git to use weave for all supported file types. Then use `git merge` as normal.
+
+To set up for just yourself (without modifying `.gitattributes`), use `.git/info/attributes` instead:
+
+```bash
+git config merge.weave.name "Entity-level semantic merge"
+git config merge.weave.driver "weave-driver %O %A %B %L %P"
+echo "*.ts *.tsx *.js *.py *.go *.rs *.java *.c *.cpp *.rb *.cs merge=weave" >> .git/info/attributes
+```
 
 ## Preview
 
