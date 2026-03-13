@@ -113,7 +113,10 @@ brew install weave
 Or build from source (requires Rust):
 
 ```bash
-cargo build --release
+git clone https://github.com/Ataraxy-Labs/weave
+cd weave
+cargo install --path crates/weave-cli
+cargo install --path crates/weave-driver
 ```
 
 ## Setup
