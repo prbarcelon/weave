@@ -1844,7 +1844,30 @@ fn scoped_conflict_marker(
     let sep = "=".repeat(fmt.marker_length);
     let close = ">".repeat(fmt.marker_length);
 
+    let o = ours.unwrap_or("");
+    let t = theirs.unwrap_or("");
+
+    // Narrow conflict markers to just the differing lines
+    let ours_lines: Vec<&str> = o.lines().collect();
+    let theirs_lines: Vec<&str> = t.lines().collect();
+    let (prefix_len, suffix_len) = if ours.is_some() && theirs.is_some() {
+        crate::conflict::narrow_conflict_lines(&ours_lines, &theirs_lines)
+    } else {
+        (0, 0)
+    };
+    let has_narrowing = prefix_len > 0 || suffix_len > 0;
+    let ours_mid = &ours_lines[prefix_len..ours_lines.len() - suffix_len];
+    let theirs_mid = &theirs_lines[prefix_len..theirs_lines.len() - suffix_len];
+
     let mut out = String::new();
+
+    // Emit common prefix as clean text
+    if has_narrowing {
+        for line in &ours_lines[..prefix_len] {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
 
     // Opening marker
     if fmt.enhanced {
@@ -1857,22 +1880,36 @@ fn scoped_conflict_marker(
         out.push_str(&format!("{} ours\n", open));
     }
 
-    // Ours content
-    if let Some(o) = ours {
-        out.push_str(o);
-        if !o.ends_with('\n') {
-            out.push('\n');
+    // Ours content (narrowed or full)
+    if ours.is_some() {
+        if has_narrowing {
+            for line in ours_mid {
+                out.push_str(line);
+                out.push('\n');
+            }
+        } else {
+            out.push_str(o);
+            if !o.ends_with('\n') {
+                out.push('\n');
+            }
         }
     }
 
     // Separator
     out.push_str(&format!("{}\n", sep));
 
-    // Theirs content
-    if let Some(t) = theirs {
-        out.push_str(t);
-        if !t.ends_with('\n') {
-            out.push('\n');
+    // Theirs content (narrowed or full)
+    if theirs.is_some() {
+        if has_narrowing {
+            for line in theirs_mid {
+                out.push_str(line);
+                out.push('\n');
+            }
+        } else {
+            out.push_str(t);
+            if !t.ends_with('\n') {
+                out.push('\n');
+            }
         }
     }
 
@@ -1885,6 +1922,14 @@ fn scoped_conflict_marker(
         }
     } else {
         out.push_str(&format!("{} theirs", close));
+    }
+
+    // Emit common suffix as clean text
+    if has_narrowing {
+        for line in &ours_lines[ours_lines.len() - suffix_len..] {
+            out.push_str(line);
+            out.push('\n');
+        }
     }
 
     out

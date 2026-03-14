@@ -3,14 +3,20 @@ name = "weave-crdt"
 version = "0.2.3"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+description = "CRDT-based coordination for multi-agent code editing. Entity-level claims, conflict detection, and version tracking."
+repository = "https://github.com/Ataraxy-Labs/weave"
+homepage = "https://github.com/Ataraxy-Labs/weave"
+keywords = ["crdt", "merge", "coordination", "multi-agent"]
+categories = ["development-tools", "data-structures"]
+readme = "../../README.md"
 
 [features]
 test-helpers = []
 
 [dependencies]
 automerge = "0.5.12"
-sem-core = { git = "https://github.com/Ataraxy-Labs/sem", version = "0.3" }
-weave-core = { path = "../weave-core" }
+sem-core = "0.3.9"
+weave-core = { path = "../weave-core", version = "0.2.3" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
