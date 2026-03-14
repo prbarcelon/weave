@@ -1066,16 +1066,11 @@ impl WeaveServer {
 #[tool_handler]
 impl ServerHandler for WeaveServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            instructions: Some(
-                "Weave MCP server for entity-level semantic merge coordination. \
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
+            "Weave MCP server for entity-level semantic merge coordination. \
                  Agents can claim entities before editing, check who is editing what, \
-                 detect potential conflicts, and preview merges."
-                    .into(),
-            ),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            ..Default::default()
-        }
+                 detect potential conflicts, and preview merges.",
+        )
     }
 }
 

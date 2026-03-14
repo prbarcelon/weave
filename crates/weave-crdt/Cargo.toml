@@ -14,7 +14,7 @@ readme = "../../README.md"
 test-helpers = []
 
 [dependencies]
-automerge = "0.5.12"
+automerge = "0.7"
 sem-core = "0.3.9"
 weave-core = { path = "../weave-core", version = "0.2.3" }
 serde = { version = "1", features = ["derive"] }
