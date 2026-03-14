@@ -1600,6 +1600,68 @@ fn ts_object_literal_different_properties_added() {
     assert!(result.content.contains("d: 4"));
 }
 
+// Issue #22: function conflict markers should be narrowed to just the differing lines
+#[test]
+fn ts_function_conflict_narrowed_to_changed_lines() {
+    let base = r#"async function foo(example: Example) {
+    someFunctionCalls()
+    anotherCall()
+
+    return join.lines(
+        `Example: "${prompt}".`,
+        `Category: ${category?.join(", ")}`,
+        includeContext && `Example Context: ${createExampleContextMessage()}`,
+        contextImages && `Example Images: <${Images.metadataTag}>${JSON.stringify(contextImages)}</${Images.metadataTag}>`,
+        commands ? `Expected Output: ${commands}` : "",
+    )
+}
+"#;
+    let ours = r#"async function foo(example: Example) {
+    someFunctionCalls()
+    anotherCall()
+
+    return join.lines(
+        `Example: "${prompt}".`,
+        `Category: ${category?.join(", ")}`,
+        includeContext && `Example Context: ${sanitize(createExampleContextMessage())}`,
+        contextImages && `Example Images: <${Images.metadataTag}>${serialize(contextImages)}</${Images.metadataTag}>`,
+        commands ? `Expected Output: ${commands}` : "",
+    )
+}
+"#;
+    let theirs = r#"async function foo(example: Example) {
+    someFunctionCalls()
+    anotherCall()
+
+    return join.lines(
+        `Example: "${prompt}".`,
+        `Category: ${category?.join(", ")}`,
+        includeContext && `Example Context: ${escapeBlock(createExampleContextMessage())}`,
+        contextImages && `Example Images: <${Images.metadataTag}>${serializeJSON(contextImages)}</${Images.metadataTag}>`,
+        commands ? `Expected Output: ${commands}` : "",
+    )
+}
+"#;
+    let result = entity_merge(base, ours, theirs, "test.ts");
+    eprintln!("--- narrowed function conflict ---");
+    eprintln!("content:\n{}", result.content);
+
+    assert!(!result.is_clean(), "Should conflict on the changed lines");
+    // The unchanged lines should NOT be inside conflict markers
+    assert!(
+        !is_inside_conflict_markers(&result.content, "someFunctionCalls"),
+        "Unchanged lines like someFunctionCalls() should be outside conflict markers"
+    );
+    assert!(
+        !is_inside_conflict_markers(&result.content, "anotherCall"),
+        "Unchanged lines like anotherCall() should be outside conflict markers"
+    );
+    assert!(
+        !is_inside_conflict_markers(&result.content, "Expected Output"),
+        "Unchanged lines like Expected Output should be outside conflict markers"
+    );
+}
+
 /// Check if a needle appears only inside conflict marker blocks
 fn is_inside_conflict_markers(content: &str, needle: &str) -> bool {
     let mut in_conflict = false;

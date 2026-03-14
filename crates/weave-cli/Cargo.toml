@@ -3,15 +3,21 @@ name = "weave-cli"
 version = "0.2.3"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+description = "Entity-level semantic merge CLI. Resolves conflicts at the function/class level instead of lines."
+repository = "https://github.com/Ataraxy-Labs/weave"
+homepage = "https://github.com/Ataraxy-Labs/weave"
+keywords = ["merge", "semantic", "git", "cli", "conflict-resolution"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "../../README.md"
 
 [[bin]]
 name = "weave"
 path = "src/main.rs"
 
 [dependencies]
-weave-core = { path = "../weave-core" }
-weave-crdt = { path = "../weave-crdt" }
-sem-core = { git = "https://github.com/Ataraxy-Labs/sem", version = "0.3" }
+weave-core = { path = "../weave-core", version = "0.2.3" }
+weave-crdt = { path = "../weave-crdt", version = "0.2.3" }
+sem-core = "0.3.9"
 clap = { version = "4", features = ["derive"] }
 colored = "3"
 diffy = "0.4"

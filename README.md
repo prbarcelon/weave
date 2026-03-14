@@ -8,12 +8,12 @@
 
 <p align="center">
   <a href="https://github.com/Ataraxy-Labs/weave/releases/latest"><img src="https://img.shields.io/github/v/release/Ataraxy-Labs/weave?color=blue&label=release" alt="Release"></a>
-  <a href="https://github.com/Ataraxy-Labs/homebrew-tap"><img src="https://img.shields.io/badge/homebrew-ataraxy--labs/tap/weave-orange" alt="Homebrew"></a>
+  <a href="https://formulae.brew.sh/formula/weave"><img src="https://img.shields.io/badge/homebrew-weave-orange" alt="Homebrew"></a>
   <img src="https://img.shields.io/badge/rust-stable-orange" alt="Rust">
-  <img src="https://img.shields.io/badge/tests-121_passing-brightgreen" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.2.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/tests-124_passing-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/version-0.2.3-blue" alt="Version">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow" alt="License"></a>
-  <img src="https://img.shields.io/badge/languages-11-blue" alt="Languages">
+  <img src="https://img.shields.io/badge/languages-20-blue" alt="Languages">
 </p>
 
 ## The Problem
@@ -58,6 +58,7 @@ The same scenario above? Weave merges it cleanly with zero conflicts — both fu
 | Both agents modify the same function differently | CONFLICT | CONFLICT (with entity-level context) |
 | One agent modifies, other deletes same function | CONFLICT (cryptic diff) | CONFLICT: `function 'validateToken' (modified in ours, deleted in theirs)` |
 | Both agents add identical function | **CONFLICT** | Auto-resolved (identical content detected) |
+| Both agents add different properties to same object | **CONFLICT** | Auto-resolved |
 | Different JSON keys modified | **CONFLICT** | Auto-resolved |
 
 The key difference: Git produces false conflicts on **independent changes** because they happen to be in the same file. Weave only conflicts on **actual semantic collisions** when two branches change the same entity incompatibly.
@@ -101,24 +102,40 @@ You immediately know: what entity conflicted, what type it is, and why it confli
 
 ## Supported Languages
 
-TypeScript, JavaScript, Python, Go, Rust, Java, C, C++, Ruby, C#, PHP, Swift, Fortran, JSON, YAML, TOML, CSV, Markdown. Falls back to standard line-level merge for unsupported file types.
+TypeScript, TSX, JavaScript, Python, Go, Rust, Java, C, C++, Ruby, C#, PHP, Swift, Kotlin, Elixir, Bash, HCL/Terraform, Fortran, Vue, XML, JSON, YAML, TOML, CSV, Markdown. Falls back to standard line-level merge for unsupported file types.
+
+## Install
+
+```bash
+brew install weave
+```
+
+Or build from source (requires Rust):
+
+```bash
+git clone https://github.com/Ataraxy-Labs/weave
+cd weave
+cargo install --path crates/weave-cli
+cargo install --path crates/weave-driver
+```
 
 ## Setup
 
+In any Git repo:
+
 ```bash
-# Build
-cargo build --release
-
-# In your repo:
-./target/release/weave-cli setup
-
-# Or manually:
-git config merge.weave.name "Entity-level semantic merge"
-git config merge.weave.driver "/path/to/weave-driver %O %A %B %L %P"
-echo "*.ts *.tsx *.js *.py *.go *.rs *.json *.yaml *.toml *.md merge=weave" >> .gitattributes
+weave setup
 ```
 
-Then use Git normally. `git merge` will use weave automatically for configured file types.
+This configures Git to use weave for all supported file types. Then use `git merge` as normal.
+
+To set up for just yourself (without modifying `.gitattributes`), use `.git/info/attributes` instead:
+
+```bash
+git config merge.weave.name "Entity-level semantic merge"
+git config merge.weave.driver "weave-driver %O %A %B %L %P"
+echo "*.ts *.tsx *.js *.py *.go *.rs *.java *.c *.cpp *.rb *.cs merge=weave" >> .git/info/attributes
+```
 
 ## Preview
 

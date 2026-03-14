@@ -136,8 +136,11 @@ fn main() {
         }
     }
 
-    // Print stats to stderr
-    eprintln!("weave [{}]: {}", file_path, result.stats);
+    // Print stats to stderr only when verbose or conflicted
+    let verbose = std::env::var("WEAVE_VERBOSE").is_ok();
+    if verbose || !result.is_clean() {
+        eprintln!("weave [{}]: {}", file_path, result.stats);
+    }
 
     // Optionally record merge in CRDT state
     #[cfg(feature = "crdt")]

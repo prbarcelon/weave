@@ -9,6 +9,7 @@ const SUPPORTED_EXTENSIONS: &[&str] = &[
     "*.java", "*.c", "*.h", "*.cpp", "*.cc", "*.cxx", "*.hpp", "*.hh", "*.hxx",
     "*.rb", "*.cs", "*.php", "*.swift", "*.ex", "*.exs", "*.sh",
     "*.f90", "*.f95", "*.f03", "*.f08",
+    "*.xml", "*.plist", "*.svg", "*.csproj", "*.fsproj", "*.vbproj",
     "*.json", "*.yaml", "*.yml", "*.toml", "*.md",
 ];
 

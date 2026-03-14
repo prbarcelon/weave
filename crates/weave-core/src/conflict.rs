@@ -279,11 +279,39 @@ pub struct EntityConflict {
     pub base_content: Option<String>,
 }
 
+/// Find common prefix and suffix lines between two texts.
+/// Returns (prefix_lines, ours_middle_lines, theirs_middle_lines, suffix_lines).
+pub fn narrow_conflict_lines<'a>(
+    ours_lines: &'a [&'a str],
+    theirs_lines: &'a [&'a str],
+) -> (usize, usize) {
+    // Common prefix
+    let prefix_len = ours_lines.iter()
+        .zip(theirs_lines.iter())
+        .take_while(|(a, b)| a == b)
+        .count();
+
+    // Common suffix (don't overlap with prefix)
+    let ours_remaining = ours_lines.len() - prefix_len;
+    let theirs_remaining = theirs_lines.len() - prefix_len;
+    let max_suffix = ours_remaining.min(theirs_remaining);
+    let suffix_len = ours_lines.iter().rev()
+        .zip(theirs_lines.iter().rev())
+        .take(max_suffix)
+        .take_while(|(a, b)| a == b)
+        .count();
+
+    (prefix_len, suffix_len)
+}
+
 impl EntityConflict {
     /// Render this conflict as conflict markers.
     ///
     /// When `fmt.enhanced` is true, includes entity metadata and resolution hints.
     /// When false, outputs standard git-compatible markers.
+    ///
+    /// Narrows conflict markers to only the differing lines: common prefix and
+    /// suffix lines are emitted as clean text outside the markers.
     pub fn to_conflict_markers(&self, fmt: &MarkerFormat) -> String {
         let ours = self.ours_content.as_deref().unwrap_or("");
         let theirs = self.theirs_content.as_deref().unwrap_or("");
@@ -291,8 +319,27 @@ impl EntityConflict {
         let sep = "=".repeat(fmt.marker_length);
         let close = ">".repeat(fmt.marker_length);
 
+        let ours_lines: Vec<&str> = ours.lines().collect();
+        let theirs_lines: Vec<&str> = theirs.lines().collect();
+
+        let (prefix_len, suffix_len) = narrow_conflict_lines(&ours_lines, &theirs_lines);
+
+        // Only narrow if there's actually a common prefix or suffix to strip
+        let has_narrowing = prefix_len > 0 || suffix_len > 0;
+        let ours_mid = &ours_lines[prefix_len..ours_lines.len() - suffix_len];
+        let theirs_mid = &theirs_lines[prefix_len..theirs_lines.len() - suffix_len];
+
         let mut out = String::new();
 
+        // Emit common prefix as clean text
+        if has_narrowing {
+            for line in &ours_lines[..prefix_len] {
+                out.push_str(line);
+                out.push('\n');
+            }
+        }
+
+        // Opening marker
         if fmt.enhanced {
             let confidence = match &self.complexity {
                 ConflictComplexity::Text => "high",
@@ -315,16 +362,35 @@ impl EntityConflict {
             out.push_str(&format!("{} ours\n", open));
         }
 
-        out.push_str(ours);
-        if !ours.is_empty() && !ours.ends_with('\n') {
-            out.push('\n');
-        }
-        out.push_str(&format!("{}\n", sep));
-        out.push_str(theirs);
-        if !theirs.is_empty() && !theirs.ends_with('\n') {
-            out.push('\n');
+        // Ours content (narrowed or full)
+        if has_narrowing {
+            for line in ours_mid {
+                out.push_str(line);
+                out.push('\n');
+            }
+        } else {
+            out.push_str(ours);
+            if !ours.is_empty() && !ours.ends_with('\n') {
+                out.push('\n');
+            }
         }
 
+        out.push_str(&format!("{}\n", sep));
+
+        // Theirs content (narrowed or full)
+        if has_narrowing {
+            for line in theirs_mid {
+                out.push_str(line);
+                out.push('\n');
+            }
+        } else {
+            out.push_str(theirs);
+            if !theirs.is_empty() && !theirs.ends_with('\n') {
+                out.push('\n');
+            }
+        }
+
+        // Closing marker
         if fmt.enhanced {
             let confidence = match &self.complexity {
                 ConflictComplexity::Text => "high",
@@ -343,6 +409,14 @@ impl EntityConflict {
             out.push_str(&format!("{} theirs \u{2014} {}\n", close, label));
         } else {
             out.push_str(&format!("{} theirs\n", close));
+        }
+
+        // Emit common suffix as clean text
+        if has_narrowing {
+            for line in &ours_lines[ours_lines.len() - suffix_len..] {
+                out.push_str(line);
+                out.push('\n');
+            }
         }
 
         out
