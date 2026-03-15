@@ -375,6 +375,28 @@ impl EntityConflict {
             }
         }
 
+        // Base section for diff3 format (standard mode only)
+        if !fmt.enhanced {
+            let base_marker = "|".repeat(fmt.marker_length);
+            out.push_str(&format!("{} base\n", base_marker));
+            let base = self.base_content.as_deref().unwrap_or("");
+            if has_narrowing {
+                let base_lines: Vec<&str> = base.lines().collect();
+                // Use prefix/suffix from ours/theirs narrowing as approximation
+                let base_prefix = prefix_len.min(base_lines.len());
+                let base_suffix = suffix_len.min(base_lines.len().saturating_sub(base_prefix));
+                for line in &base_lines[base_prefix..base_lines.len() - base_suffix] {
+                    out.push_str(line);
+                    out.push('\n');
+                }
+            } else {
+                out.push_str(base);
+                if !base.is_empty() && !base.ends_with('\n') {
+                    out.push('\n');
+                }
+            }
+        }
+
         out.push_str(&format!("{}\n", sep));
 
         // Theirs content (narrowed or full)
@@ -771,7 +793,7 @@ mod tests {
             base_content: Some("return 0;".to_string()),
         };
         let markers = conflict.to_conflict_markers(&MarkerFormat::standard(7));
-        assert_eq!(markers, "<<<<<<< ours\nreturn 1;\n=======\nreturn 2;\n>>>>>>> theirs\n");
+        assert_eq!(markers, "<<<<<<< ours\nreturn 1;\n||||||| base\nreturn 0;\n=======\nreturn 2;\n>>>>>>> theirs\n");
         // No em-dash, no hint, no metadata
         assert!(!markers.contains('\u{2014}'));
         assert!(!markers.contains("hint"));

@@ -63,6 +63,18 @@ The same scenario above? Weave merges it cleanly with zero conflicts — both fu
 
 The key difference: Git produces false conflicts on **independent changes** because they happen to be in the same file. Weave only conflicts on **actual semantic collisions** when two branches change the same entity incompatibly.
 
+## Weave vs Mergiraf
+
+Tested on 31 real-world merge scenarios across Python, TypeScript, Rust, Go, Java, and C:
+
+| Tool | Clean Merges | Score |
+|------|-------------|-------|
+| **Weave** | **31/31** | 100% |
+| Mergiraf (v0.16.3) | 26/31 | 83% |
+| Git | 15/31 | 48% |
+
+Mergiraf fails on both-add-at-end-of-file, insert-between-existing, and decorator conflict scenarios. Weave resolves all of these because it operates at entity granularity (functions, classes, methods) rather than AST node level. Full breakdown at [ataraxy-labs.github.io/weave](https://ataraxy-labs.github.io/weave/).
+
 ## Real-World Benchmarks
 
 Tested on real merge commits from major open-source repositories. For each merge commit, we replay the merge with both Git and Weave, then compare against the human-authored result.
@@ -135,6 +147,25 @@ To set up for just yourself (without modifying `.gitattributes`), use `.git/info
 git config merge.weave.name "Entity-level semantic merge"
 git config merge.weave.driver "weave-driver %O %A %B %L %P"
 echo "*.ts *.tsx *.js *.py *.go *.rs *.java *.c *.cpp *.rb *.cs merge=weave" >> .git/info/attributes
+```
+
+## Jujutsu (jj)
+
+Add to your jj config (`jj config edit --user`):
+
+```toml
+[merge-tools.weave]
+program = "weave-driver"
+merge-args = ["$base", "$left", "$right", "-o", "$output", "-l", "$marker_length", "-p", "$path"]
+merge-conflict-exit-codes = [1]
+merge-tool-edits-conflict-markers = true
+conflict-marker-style = "git"
+```
+
+Resolve conflicts with `jj resolve --tool weave`, or set as default:
+
+```bash
+jj config set --user ui.merge-editor "weave"
 ```
 
 ## Preview

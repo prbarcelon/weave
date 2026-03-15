@@ -1087,6 +1087,8 @@ fn merge_interstitials(
 }
 
 /// Check if a region is predominantly import/use statements.
+/// Handles both single-line imports and multi-line import blocks
+/// (e.g. `import { type a, type b } from "..."` spread across lines).
 fn is_import_region(content: &str) -> bool {
     let lines: Vec<&str> = content
         .lines()
@@ -1095,7 +1097,26 @@ fn is_import_region(content: &str) -> bool {
     if lines.is_empty() {
         return false;
     }
-    let import_count = lines.iter().filter(|l| is_import_line(l)).count();
+    let mut import_count = 0;
+    let mut in_multiline_import = false;
+    for line in &lines {
+        if in_multiline_import {
+            import_count += 1;
+            let trimmed = line.trim();
+            if trimmed.starts_with('}') || trimmed.ends_with(')') {
+                in_multiline_import = false;
+            }
+        } else if is_import_line(line) {
+            import_count += 1;
+            let trimmed = line.trim();
+            // Detect start of multi-line import: `import {` or `import (` without closing on same line
+            if (trimmed.contains('{') && !trimmed.contains('}'))
+                || (trimmed.starts_with("import (") && !trimmed.contains(')'))
+            {
+                in_multiline_import = true;
+            }
+        }
+    }
     // If >50% of non-empty lines are imports, treat as import region
     import_count * 2 > lines.len()
 }
@@ -1185,30 +1206,127 @@ fn is_import_line(line: &str) -> bool {
         || trimmed.starts_with("using ")
 }
 
+/// A complete import statement (possibly multi-line) as a single unit.
+#[derive(Debug, Clone)]
+struct ImportStatement {
+    /// The full text of the import (may span multiple lines)
+    lines: Vec<String>,
+    /// The source module (e.g. "./foo", "react", "std::io")
+    source: String,
+    /// For multi-line imports: the individual specifiers (e.g. ["type a", "type b"])
+    specifiers: Vec<String>,
+    /// Whether this is a multi-line import block
+    is_multiline: bool,
+}
+
+/// Parse content into import statements, handling multi-line imports as single units.
+fn parse_import_statements(content: &str) -> (Vec<ImportStatement>, Vec<String>) {
+    let mut imports: Vec<ImportStatement> = Vec::new();
+    let mut non_import_lines: Vec<String> = Vec::new();
+    let lines: Vec<&str> = content.lines().collect();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let line = lines[i];
+
+        if line.trim().is_empty() {
+            non_import_lines.push(line.to_string());
+            i += 1;
+            continue;
+        }
+
+        if is_import_line(line) {
+            let trimmed = line.trim();
+            // Check for multi-line import: `import {` without `}` on same line
+            let starts_multiline = (trimmed.contains('{') && !trimmed.contains('}'))
+                || (trimmed.starts_with("import (") && !trimmed.contains(')'));
+
+            if starts_multiline {
+                let mut block_lines = vec![line.to_string()];
+                let mut specifiers = Vec::new();
+                let close_char = if trimmed.contains('{') { '}' } else { ')' };
+                i += 1;
+
+                // Collect lines until closing brace/paren
+                while i < lines.len() {
+                    let inner = lines[i];
+                    block_lines.push(inner.to_string());
+                    let inner_trimmed = inner.trim();
+
+                    if inner_trimmed.starts_with(close_char) {
+                        // This is the closing line (e.g. `} from "./foo"`)
+                        break;
+                    } else if !inner_trimmed.is_empty() {
+                        // This is a specifier line — strip trailing comma
+                        let spec = inner_trimmed.trim_end_matches(',').trim().to_string();
+                        if !spec.is_empty() {
+                            specifiers.push(spec);
+                        }
+                    }
+                    i += 1;
+                }
+
+                let full_text = block_lines.join("\n");
+                let source = import_source_prefix(&full_text).to_string();
+                imports.push(ImportStatement {
+                    lines: block_lines,
+                    source,
+                    specifiers,
+                    is_multiline: true,
+                });
+            } else {
+                // Single-line import
+                let source = import_source_prefix(line).to_string();
+                imports.push(ImportStatement {
+                    lines: vec![line.to_string()],
+                    source,
+                    specifiers: Vec::new(),
+                    is_multiline: false,
+                });
+            }
+        } else {
+            non_import_lines.push(line.to_string());
+        }
+        i += 1;
+    }
+
+    (imports, non_import_lines)
+}
+
 /// Merge import blocks commutatively (as unordered sets), preserving grouping.
 ///
-/// Splits imports into groups separated by blank lines. Merges within each group
-/// commutatively. New imports from theirs go into the matching group (by source
-/// prefix, e.g. "from collections" matches "from collections.abc") or the last group.
+/// Handles both single-line imports and multi-line import blocks.
+/// For multi-line imports from the same source, merges specifiers as a set.
+/// Single-line imports are merged as before: set union with deletions.
 fn merge_imports_commutatively(base: &str, ours: &str, theirs: &str) -> String {
-    let base_imports: HashSet<&str> = base.lines().filter(|l| is_import_line(l)).collect();
-    let ours_imports: HashSet<&str> = ours.lines().filter(|l| is_import_line(l)).collect();
+    let (base_imports, _) = parse_import_statements(base);
+    let (ours_imports, _) = parse_import_statements(ours);
+    let (theirs_imports, _) = parse_import_statements(theirs);
 
-    // Theirs deleted: in base but removed by theirs. Remove from ours output.
-    let theirs_deleted: HashSet<&str> = base_imports.difference(
+    let has_multiline = base_imports.iter().any(|i| i.is_multiline)
+        || ours_imports.iter().any(|i| i.is_multiline)
+        || theirs_imports.iter().any(|i| i.is_multiline);
+
+    if has_multiline {
+        return merge_imports_with_multiline(base, ours, theirs,
+            &base_imports, &ours_imports, &theirs_imports);
+    }
+
+    // Original single-line-only logic
+    let base_lines: HashSet<&str> = base.lines().filter(|l| is_import_line(l)).collect();
+    let ours_lines: HashSet<&str> = ours.lines().filter(|l| is_import_line(l)).collect();
+
+    let theirs_deleted: HashSet<&str> = base_lines.difference(
         &theirs.lines().filter(|l| is_import_line(l)).collect::<HashSet<&str>>()
     ).copied().collect();
 
-    // Theirs added: new in theirs, not in base, not already in ours
     let theirs_added: Vec<&str> = theirs
         .lines()
-        .filter(|l| is_import_line(l) && !base_imports.contains(l) && !ours_imports.contains(l))
+        .filter(|l| is_import_line(l) && !base_lines.contains(l) && !ours_lines.contains(l))
         .collect();
 
-    // Split ours into groups (separated by blank lines), preserving non-import lines
     let mut groups: Vec<Vec<&str>> = Vec::new();
     let mut current_group: Vec<&str> = Vec::new();
-    let mut non_import_lines: Vec<(usize, &str)> = Vec::new(); // (group_idx, line)
 
     for line in ours.lines() {
         if line.trim().is_empty() {
@@ -1216,15 +1334,12 @@ fn merge_imports_commutatively(base: &str, ours: &str, theirs: &str) -> String {
                 groups.push(current_group);
                 current_group = Vec::new();
             }
-            // Track blank lines for reconstruction
-            non_import_lines.push((groups.len(), line));
         } else if is_import_line(line) {
             if theirs_deleted.contains(line) {
                 continue;
             }
             current_group.push(line);
         } else {
-            // Non-import, non-blank line (comment, etc.)
             current_group.push(line);
         }
     }
@@ -1232,7 +1347,6 @@ fn merge_imports_commutatively(base: &str, ours: &str, theirs: &str) -> String {
         groups.push(current_group);
     }
 
-    // For each theirs addition, find the best matching group by source prefix
     for add in &theirs_added {
         let prefix = import_source_prefix(add);
         let mut best_group = if groups.is_empty() { 0 } else { groups.len() - 1 };
@@ -1251,7 +1365,6 @@ fn merge_imports_commutatively(base: &str, ours: &str, theirs: &str) -> String {
         }
     }
 
-    // Reconstruct with blank line separators between groups
     let mut result_lines: Vec<&str> = Vec::new();
     for (i, group) in groups.iter().enumerate() {
         if i > 0 {
@@ -1261,8 +1374,162 @@ fn merge_imports_commutatively(base: &str, ours: &str, theirs: &str) -> String {
     }
 
     let mut result = result_lines.join("\n");
-    // Preserve trailing newlines from ours
     let ours_trailing = ours.len() - ours.trim_end_matches('\n').len();
+    let result_trailing = result.len() - result.trim_end_matches('\n').len();
+    for _ in result_trailing..ours_trailing {
+        result.push('\n');
+    }
+    result
+}
+
+/// Merge imports when multi-line import blocks are involved.
+/// Matches imports by source module, merges specifiers as a set.
+fn merge_imports_with_multiline(
+    _base_raw: &str,
+    ours_raw: &str,
+    _theirs_raw: &str,
+    base_imports: &[ImportStatement],
+    ours_imports: &[ImportStatement],
+    theirs_imports: &[ImportStatement],
+) -> String {
+    // Build source → specifier sets for base and theirs
+    let base_specs: HashMap<&str, HashSet<&str>> = base_imports.iter().map(|imp| {
+        let specs: HashSet<&str> = imp.specifiers.iter().map(|s| s.as_str()).collect();
+        (imp.source.as_str(), specs)
+    }).collect();
+
+    let theirs_specs: HashMap<&str, HashSet<&str>> = theirs_imports.iter().map(|imp| {
+        let specs: HashSet<&str> = imp.specifiers.iter().map(|s| s.as_str()).collect();
+        (imp.source.as_str(), specs)
+    }).collect();
+
+    // Single-line import tracking: base lines and theirs-deleted
+    let base_single: HashSet<String> = base_imports.iter()
+        .filter(|i| !i.is_multiline)
+        .map(|i| i.lines[0].clone())
+        .collect();
+    let theirs_single: HashSet<String> = theirs_imports.iter()
+        .filter(|i| !i.is_multiline)
+        .map(|i| i.lines[0].clone())
+        .collect();
+    let theirs_deleted_single: HashSet<&str> = base_single.iter()
+        .filter(|l| !theirs_single.contains(l.as_str()))
+        .map(|l| l.as_str())
+        .collect();
+
+    // Process ours imports, merging in theirs specifiers
+    let mut result_parts: Vec<String> = Vec::new();
+    let mut handled_theirs_sources: HashSet<&str> = HashSet::new();
+
+    // Walk through ours_raw to preserve formatting (blank lines, comments)
+    let lines: Vec<&str> = ours_raw.lines().collect();
+    let mut i = 0;
+    let mut ours_imp_idx = 0;
+
+    while i < lines.len() {
+        let line = lines[i];
+
+        if line.trim().is_empty() {
+            result_parts.push(line.to_string());
+            i += 1;
+            continue;
+        }
+
+        if is_import_line(line) {
+            let trimmed = line.trim();
+            let starts_multiline = (trimmed.contains('{') && !trimmed.contains('}'))
+                || (trimmed.starts_with("import (") && !trimmed.contains(')'));
+
+            if starts_multiline && ours_imp_idx < ours_imports.len() {
+                let imp = &ours_imports[ours_imp_idx];
+                // Find the matching import by source
+                let source = imp.source.as_str();
+                handled_theirs_sources.insert(source);
+
+                // Merge specifiers: ours + theirs additions - theirs deletions
+                let base_spec_set = base_specs.get(source).cloned().unwrap_or_default();
+                let theirs_spec_set = theirs_specs.get(source).cloned().unwrap_or_default();
+                // Added by theirs: in theirs but not in base
+                let theirs_added: HashSet<&str> = theirs_spec_set.difference(&base_spec_set).copied().collect();
+                // Deleted by theirs: in base but not in theirs
+                let theirs_removed: HashSet<&str> = base_spec_set.difference(&theirs_spec_set).copied().collect();
+
+                // Final set: ours (in original order) + theirs_added - theirs_removed
+                let mut final_specs: Vec<&str> = imp.specifiers.iter()
+                    .map(|s| s.as_str())
+                    .filter(|s| !theirs_removed.contains(s))
+                    .collect();
+                for added in &theirs_added {
+                    if !final_specs.contains(added) {
+                        final_specs.push(added);
+                    }
+                }
+
+                // Detect indentation from the original block
+                let indent = if imp.lines.len() > 1 {
+                    let second = &imp.lines[1];
+                    &second[..second.len() - second.trim_start().len()]
+                } else {
+                    "     "
+                };
+
+                // Reconstruct multi-line import
+                result_parts.push(imp.lines[0].clone()); // `import {`
+                for spec in &final_specs {
+                    result_parts.push(format!("{}{},", indent, spec));
+                }
+                // Closing line from ours
+                if let Some(last) = imp.lines.last() {
+                    result_parts.push(last.clone());
+                }
+
+                // Skip past the original multi-line block in ours_raw
+                let close_char = if trimmed.contains('{') { '}' } else { ')' };
+                i += 1;
+                while i < lines.len() {
+                    if lines[i].trim().starts_with(close_char) {
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+                ours_imp_idx += 1;
+                continue;
+            } else {
+                // Single-line import
+                if ours_imp_idx < ours_imports.len() {
+                    let imp = &ours_imports[ours_imp_idx];
+                    handled_theirs_sources.insert(imp.source.as_str());
+                    ours_imp_idx += 1;
+                }
+                // Check if theirs deleted this single-line import
+                if !theirs_deleted_single.contains(line) {
+                    result_parts.push(line.to_string());
+                }
+            }
+        } else {
+            result_parts.push(line.to_string());
+        }
+        i += 1;
+    }
+
+    // Add any new imports from theirs that have new sources
+    for imp in theirs_imports {
+        if handled_theirs_sources.contains(imp.source.as_str()) {
+            continue;
+        }
+        // Check if this source exists in base (if so, it was handled above)
+        if base_specs.contains_key(imp.source.as_str()) {
+            continue;
+        }
+        // Truly new import from theirs
+        for line in &imp.lines {
+            result_parts.push(line.clone());
+        }
+    }
+
+    let mut result = result_parts.join("\n");
+    let ours_trailing = ours_raw.len() - ours_raw.trim_end_matches('\n').len();
     let result_trailing = result.len() - result.trim_end_matches('\n').len();
     for _ in result_trailing..ours_trailing {
         result.push('\n');
@@ -1275,25 +1542,38 @@ fn merge_imports_commutatively(base: &str, ours: &str, theirs: &str) -> String {
 ///      "import React from 'react'" -> "react"
 ///      "use std::collections::HashMap;" -> "std::collections"
 fn import_source_prefix(line: &str) -> &str {
-    let trimmed = line.trim();
-    // Python: "from X import Y" -> X
-    if let Some(rest) = trimmed.strip_prefix("from ") {
-        return rest.split_whitespace().next().unwrap_or("");
-    }
-    // JS/TS: "import X from 'Y'" -> Y (between quotes)
-    if trimmed.starts_with("import ") {
-        if let Some(quote_start) = trimmed.find(|c: char| c == '\'' || c == '"') {
-            let after = &trimmed[quote_start + 1..];
-            if let Some(quote_end) = after.find(|c: char| c == '\'' || c == '"') {
-                return &after[..quote_end];
+    // For multi-line imports, search all lines for the source module
+    // (e.g. `} from "./foo"` on the closing line)
+    for l in line.lines() {
+        let trimmed = l.trim();
+        // Python: "from X import Y" -> X
+        if let Some(rest) = trimmed.strip_prefix("from ") {
+            return rest.split_whitespace().next().unwrap_or("");
+        }
+        // JS/TS closing line: `} from 'Y'` or `} from "Y"`
+        if trimmed.starts_with('}') && trimmed.contains("from ") {
+            if let Some(quote_start) = trimmed.find(|c: char| c == '\'' || c == '"') {
+                let after = &trimmed[quote_start + 1..];
+                if let Some(quote_end) = after.find(|c: char| c == '\'' || c == '"') {
+                    return &after[..quote_end];
+                }
             }
         }
+        // JS/TS: "import X from 'Y'" -> Y (between quotes)
+        if trimmed.starts_with("import ") {
+            if let Some(quote_start) = trimmed.find(|c: char| c == '\'' || c == '"') {
+                let after = &trimmed[quote_start + 1..];
+                if let Some(quote_end) = after.find(|c: char| c == '\'' || c == '"') {
+                    return &after[..quote_end];
+                }
+            }
+        }
+        // Rust: "use X::Y;" -> X
+        if let Some(rest) = trimmed.strip_prefix("use ") {
+            return rest.split("::").next().unwrap_or("").trim_end_matches(';');
+        }
     }
-    // Rust: "use X::Y;" -> X
-    if let Some(rest) = trimmed.strip_prefix("use ") {
-        return rest.split("::").next().unwrap_or("").trim_end_matches(';');
-    }
-    trimmed
+    line.trim()
 }
 
 /// Fallback to line-level 3-way merge when entity extraction isn't possible.
@@ -3643,5 +3923,305 @@ export * from "./types";
         std::env::set_var("WEAVE_MAX_DUPLICATES", "20");
         assert!(!has_excessive_duplicates(&entities));
         std::env::remove_var("WEAVE_MAX_DUPLICATES");
+    }
+
+    #[test]
+    fn test_ts_multiline_import_consolidation() {
+        // Issue #24: when incoming consolidates two imports into one multi-line import,
+        // the `import {` opening line can get dropped.
+        let base = "\
+import type { Foo } from \"./foo\"
+import {
+     type a,
+     type b,
+     type c,
+} from \"./foo\"
+
+export function bar() {
+    return 1;
+}
+";
+        let ours = base;
+        let theirs = "\
+import {
+     type Foo,
+     type a,
+     type b,
+     type c,
+} from \"./foo\"
+
+export function bar() {
+    return 1;
+}
+";
+        let result = entity_merge(base, ours, theirs, "test.ts");
+        eprintln!("TS import consolidation: clean={}, conflicts={:?}", result.is_clean(), result.conflicts);
+        eprintln!("Content:\n{}", result.content);
+        // Theirs is the only change, result should match theirs exactly
+        assert!(result.content.contains("import {"), "import {{ must not be dropped");
+        assert!(result.content.contains("type Foo,"), "type Foo must be present");
+        assert!(result.content.contains("} from \"./foo\""), "closing must be present");
+        assert!(!result.content.contains("import type { Foo }"), "old separate import should be removed");
+    }
+
+    #[test]
+    fn test_ts_multiline_import_both_modify() {
+        // Issue #24 variant: both sides modify the import block
+        let base = "\
+import type { Foo } from \"./foo\"
+import {
+     type a,
+     type b,
+     type c,
+} from \"./foo\"
+
+export function bar() {
+    return 1;
+}
+";
+        // Ours: consolidates imports + adds type d
+        let ours = "\
+import {
+     type Foo,
+     type a,
+     type b,
+     type c,
+     type d,
+} from \"./foo\"
+
+export function bar() {
+    return 1;
+}
+";
+        // Theirs: consolidates imports + adds type e
+        let theirs = "\
+import {
+     type Foo,
+     type a,
+     type b,
+     type c,
+     type e,
+} from \"./foo\"
+
+export function bar() {
+    return 1;
+}
+";
+        let result = entity_merge(base, ours, theirs, "test.ts");
+        eprintln!("TS import both modify: clean={}, conflicts={:?}", result.is_clean(), result.conflicts);
+        eprintln!("Content:\n{}", result.content);
+        assert!(result.content.contains("import {"), "import {{ must not be dropped");
+        assert!(result.content.contains("type Foo,"), "type Foo must be present");
+        assert!(result.content.contains("type d,"), "ours addition must be present");
+        assert!(result.content.contains("type e,"), "theirs addition must be present");
+        assert!(result.content.contains("} from \"./foo\""), "closing must be present");
+    }
+
+    #[test]
+    fn test_ts_multiline_import_no_entities() {
+        // Issue #24: file with only imports, no other entities
+        let base = "\
+import type { Foo } from \"./foo\"
+import {
+     type a,
+     type b,
+     type c,
+} from \"./foo\"
+";
+        let ours = base;
+        let theirs = "\
+import {
+     type Foo,
+     type a,
+     type b,
+     type c,
+} from \"./foo\"
+";
+        let result = entity_merge(base, ours, theirs, "test.ts");
+        eprintln!("TS import no entities: clean={}, conflicts={:?}", result.is_clean(), result.conflicts);
+        eprintln!("Content:\n{}", result.content);
+        assert!(result.content.contains("import {"), "import {{ must not be dropped");
+        assert!(result.content.contains("type Foo,"), "type Foo must be present");
+    }
+
+    #[test]
+    fn test_ts_multiline_import_export_variable() {
+        // Issue #24: import block near an export variable entity
+        let base = "\
+import type { Foo } from \"./foo\"
+import {
+     type a,
+     type b,
+     type c,
+} from \"./foo\"
+
+export const X = 1;
+
+export function bar() {
+    return 1;
+}
+";
+        let ours = "\
+import type { Foo } from \"./foo\"
+import {
+     type a,
+     type b,
+     type c,
+     type d,
+} from \"./foo\"
+
+export const X = 1;
+
+export function bar() {
+    return 1;
+}
+";
+        let theirs = "\
+import {
+     type Foo,
+     type a,
+     type b,
+     type c,
+} from \"./foo\"
+
+export const X = 2;
+
+export function bar() {
+    return 1;
+}
+";
+        let result = entity_merge(base, ours, theirs, "test.ts");
+        eprintln!("TS import + export var: clean={}, conflicts={:?}", result.is_clean(), result.conflicts);
+        eprintln!("Content:\n{}", result.content);
+        assert!(result.content.contains("import {"), "import {{ must not be dropped");
+    }
+
+    #[test]
+    fn test_ts_multiline_import_adjacent_to_entity() {
+        // Issue #24: import block directly adjacent to entity (no blank line)
+        let base = "\
+import type { Foo } from \"./foo\"
+import {
+     type a,
+     type b,
+     type c,
+} from \"./foo\"
+export function bar() {
+    return 1;
+}
+";
+        let ours = base;
+        let theirs = "\
+import {
+     type Foo,
+     type a,
+     type b,
+     type c,
+} from \"./foo\"
+export function bar() {
+    return 1;
+}
+";
+        let result = entity_merge(base, ours, theirs, "test.ts");
+        eprintln!("TS import adjacent: clean={}, conflicts={:?}", result.is_clean(), result.conflicts);
+        eprintln!("Content:\n{}", result.content);
+        assert!(result.content.contains("import {"), "import {{ must not be dropped");
+        assert!(result.content.contains("type Foo,"), "type Foo must be present");
+    }
+
+    #[test]
+    fn test_ts_multiline_import_both_consolidate_differently() {
+        // Issue #24: both sides consolidate imports but add different specifiers
+        let base = "\
+import type { Foo } from \"./foo\"
+import {
+     type a,
+     type b,
+} from \"./foo\"
+
+export function bar() {
+    return 1;
+}
+";
+        let ours = "\
+import {
+     type Foo,
+     type a,
+     type b,
+     type c,
+} from \"./foo\"
+
+export function bar() {
+    return 1;
+}
+";
+        let theirs = "\
+import {
+     type Foo,
+     type a,
+     type b,
+     type d,
+} from \"./foo\"
+
+export function bar() {
+    return 1;
+}
+";
+        let result = entity_merge(base, ours, theirs, "test.ts");
+        eprintln!("TS both consolidate: clean={}, conflicts={:?}", result.is_clean(), result.conflicts);
+        eprintln!("Content:\n{}", result.content);
+        assert!(result.content.contains("import {"), "import {{ must not be dropped");
+        assert!(result.content.contains("type Foo,"), "type Foo must be present");
+        assert!(result.content.contains("} from \"./foo\""), "closing must be present");
+    }
+
+    #[test]
+    fn test_ts_multiline_import_ours_adds_theirs_consolidates() {
+        // Issue #24 variant: ours adds new import, theirs consolidates
+        let base = "\
+import type { Foo } from \"./foo\"
+import {
+     type a,
+     type b,
+     type c,
+} from \"./foo\"
+
+export function bar() {
+    return 1;
+}
+";
+        // Ours: adds a new specifier to the multiline import
+        let ours = "\
+import type { Foo } from \"./foo\"
+import {
+     type a,
+     type b,
+     type c,
+     type d,
+} from \"./foo\"
+
+export function bar() {
+    return 1;
+}
+";
+        // Theirs: consolidates into one import
+        let theirs = "\
+import {
+     type Foo,
+     type a,
+     type b,
+     type c,
+} from \"./foo\"
+
+export function bar() {
+    return 1;
+}
+";
+        let result = entity_merge(base, ours, theirs, "test.ts");
+        eprintln!("TS import ours-adds theirs-consolidates: clean={}, conflicts={:?}", result.is_clean(), result.conflicts);
+        eprintln!("Content:\n{}", result.content);
+        assert!(result.content.contains("import {"), "import {{ must not be dropped");
+        assert!(result.content.contains("type d,"), "ours addition must be present");
+        assert!(result.content.contains("} from \"./foo\""), "closing must be present");
     }
 }
