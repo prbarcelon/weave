@@ -1701,6 +1701,10 @@ fn git_merge_file(base: &str, ours: &str, theirs: &str, stats: &mut MergeStats) 
     let output = Command::new("git")
         .arg("merge-file")
         .arg("-p") // print to stdout instead of modifying ours in place
+        .arg("--diff3") // include ||||||| base section for jj compatibility
+        .arg("-L").arg("ours")
+        .arg("-L").arg("base")
+        .arg("-L").arg("theirs")
         .arg(&ours_path)
         .arg(&base_path)
         .arg(&theirs_path)
@@ -2114,6 +2118,7 @@ fn children_to_chunks(
 /// Generate a scoped conflict marker for a single member within a container merge.
 fn scoped_conflict_marker(
     name: &str,
+    base: Option<&str>,
     ours: Option<&str>,
     theirs: Option<&str>,
     ours_deleted: bool,
@@ -2175,6 +2180,27 @@ fn scoped_conflict_marker(
         }
     }
 
+    // Base section for diff3 format (standard mode only)
+    if !fmt.enhanced {
+        let base_marker = "|".repeat(fmt.marker_length);
+        out.push_str(&format!("{} base\n", base_marker));
+        let b = base.unwrap_or("");
+        if has_narrowing {
+            let base_lines: Vec<&str> = b.lines().collect();
+            let base_prefix = prefix_len.min(base_lines.len());
+            let base_suffix = suffix_len.min(base_lines.len().saturating_sub(base_prefix));
+            for line in &base_lines[base_prefix..base_lines.len() - base_suffix] {
+                out.push_str(line);
+                out.push('\n');
+            }
+        } else {
+            out.push_str(b);
+            if !b.is_empty() && !b.ends_with('\n') {
+                out.push('\n');
+            }
+        }
+    }
+
     // Separator
     out.push_str(&format!("{}\n", sep));
 
@@ -2196,12 +2222,12 @@ fn scoped_conflict_marker(
     // Closing marker
     if fmt.enhanced {
         if theirs_deleted {
-            out.push_str(&format!("{} theirs ({} deleted)", close, name));
+            out.push_str(&format!("{} theirs ({} deleted)\n", close, name));
         } else {
-            out.push_str(&format!("{} theirs ({})", close, name));
+            out.push_str(&format!("{} theirs ({})\n", close, name));
         }
     } else {
-        out.push_str(&format!("{} theirs", close));
+        out.push_str(&format!("{} theirs\n", close));
     }
 
     // Emit common suffix as clean text
@@ -2322,7 +2348,7 @@ fn try_inner_entity_merge(
                     } else {
                         // Emit per-member conflict markers
                         has_conflict = true;
-                        merged_members.push(scoped_conflict_marker(name, Some(o), Some(t), false, false, marker_format));
+                        merged_members.push(scoped_conflict_marker(name, Some(b), Some(o), Some(t), false, false, marker_format));
                     }
                 }
             }
@@ -2333,7 +2359,7 @@ fn try_inner_entity_merge(
                 } else {
                     // Ours modified, theirs deleted → per-member conflict
                     has_conflict = true;
-                    merged_members.push(scoped_conflict_marker(name, Some(o), None, false, true, marker_format));
+                    merged_members.push(scoped_conflict_marker(name, Some(b), Some(o), None, false, true, marker_format));
                 }
             }
             // Deleted by ours, theirs unchanged or not in base
@@ -2343,7 +2369,7 @@ fn try_inner_entity_merge(
                 } else {
                     // Theirs modified, ours deleted → per-member conflict
                     has_conflict = true;
-                    merged_members.push(scoped_conflict_marker(name, None, Some(t), true, false, marker_format));
+                    merged_members.push(scoped_conflict_marker(name, Some(b), None, Some(t), true, false, marker_format));
                 }
             }
             // Added by ours only
@@ -2360,7 +2386,7 @@ fn try_inner_entity_merge(
                     merged_members.push(o.to_string());
                 } else {
                     has_conflict = true;
-                    merged_members.push(scoped_conflict_marker(name, Some(o), Some(t), false, false, marker_format));
+                    merged_members.push(scoped_conflict_marker(name, None, Some(o), Some(t), false, false, marker_format));
                 }
             }
             // Deleted by both
@@ -2474,7 +2500,7 @@ fn try_inner_merge_with_chunks(
                     merged_members.push(merged);
                 } else {
                     has_conflict = true;
-                    merged_members.push(scoped_conflict_marker(name, Some(o), Some(t), false, false, marker_format));
+                    merged_members.push(scoped_conflict_marker(name, Some(b), Some(o), Some(t), false, false, marker_format));
                 }
             }
             (Some(b), Some(o), None) => {
@@ -2490,7 +2516,7 @@ fn try_inner_merge_with_chunks(
                     merged_members.push(o.to_string());
                 } else {
                     has_conflict = true;
-                    merged_members.push(scoped_conflict_marker(name, Some(o), Some(t), false, false, marker_format));
+                    merged_members.push(scoped_conflict_marker(name, None, Some(o), Some(t), false, false, marker_format));
                 }
             }
             (Some(_), None, None) | (None, None, None) => {}
