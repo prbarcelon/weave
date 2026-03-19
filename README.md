@@ -11,9 +11,9 @@
   <a href="https://formulae.brew.sh/formula/weave"><img src="https://img.shields.io/badge/homebrew-weave-orange" alt="Homebrew"></a>
   <img src="https://img.shields.io/badge/rust-stable-orange" alt="Rust">
   <img src="https://img.shields.io/badge/tests-124_passing-brightgreen" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.2.3-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.2.5-blue" alt="Version">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow" alt="License"></a>
-  <img src="https://img.shields.io/badge/languages-20-blue" alt="Languages">
+  <img src="https://img.shields.io/badge/languages-21-blue" alt="Languages">
 </p>
 
 ## The Problem
@@ -114,7 +114,7 @@ You immediately know: what entity conflicted, what type it is, and why it confli
 
 ## Supported Languages
 
-TypeScript, TSX, JavaScript, Python, Go, Rust, Java, C, C++, Ruby, C#, PHP, Swift, Kotlin, Elixir, Bash, HCL/Terraform, Fortran, Vue, XML, JSON, YAML, TOML, CSV, Markdown. Falls back to standard line-level merge for unsupported file types.
+TypeScript, TSX, JavaScript, Python, Go, Rust, Java, C, C++, Ruby, C#, PHP, Swift, Kotlin, Elixir, Bash, HCL/Terraform, Fortran, Vue, XML, ERB, JSON, YAML, TOML, CSV, Markdown. Falls back to standard line-level merge for unsupported file types.
 
 ## Install
 
