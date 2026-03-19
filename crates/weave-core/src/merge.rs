@@ -3695,6 +3695,82 @@ export function calculate(a: number, b: number): number {
     }
 
     #[test]
+    fn test_rust_impl_same_trait_different_types() {
+        // Two impl blocks for the same trait but different types.
+        // Each branch modifies a different impl. Both should be preserved.
+        // Regression: sem-core <0.3.10 named both "Stream", causing collision.
+        let base = r#"struct Foo;
+struct Bar;
+
+impl Stream for Foo {
+    type Item = i32;
+    fn poll_next(&self) -> Option<i32> {
+        Some(1)
+    }
+}
+
+impl Stream for Bar {
+    type Item = String;
+    fn poll_next(&self) -> Option<String> {
+        Some("hello".into())
+    }
+}
+
+fn other() {}
+"#;
+        let ours = r#"struct Foo;
+struct Bar;
+
+impl Stream for Foo {
+    type Item = i32;
+    fn poll_next(&self) -> Option<i32> {
+        let x = compute();
+        Some(x + 1)
+    }
+}
+
+impl Stream for Bar {
+    type Item = String;
+    fn poll_next(&self) -> Option<String> {
+        Some("hello".into())
+    }
+}
+
+fn other() {}
+"#;
+        let theirs = r#"struct Foo;
+struct Bar;
+
+impl Stream for Foo {
+    type Item = i32;
+    fn poll_next(&self) -> Option<i32> {
+        Some(1)
+    }
+}
+
+impl Stream for Bar {
+    type Item = String;
+    fn poll_next(&self) -> Option<String> {
+        let s = format!("hello {}", name);
+        Some(s)
+    }
+}
+
+fn other() {}
+"#;
+        let result = entity_merge(base, ours, theirs, "test.rs");
+        assert!(
+            result.is_clean(),
+            "Same trait, different types should not conflict. Conflicts: {:?}",
+            result.conflicts,
+        );
+        assert!(result.content.contains("impl Stream for Foo"), "Should have Foo impl");
+        assert!(result.content.contains("impl Stream for Bar"), "Should have Bar impl");
+        assert!(result.content.contains("compute()"), "Should have ours' Foo change");
+        assert!(result.content.contains("format!"), "Should have theirs' Bar change");
+    }
+
+    #[test]
     fn test_rust_doc_comment_plus_body_change() {
         // One side adds Rust doc comment, other modifies body
         // Comment bundling ensures the doc comment is part of the entity

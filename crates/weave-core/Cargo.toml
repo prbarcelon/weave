@@ -1,6 +1,6 @@
 [package]
 name = "weave-core"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Entity-level semantic merge engine. Three-way merge at the function/class/method level instead of lines."
@@ -11,7 +11,7 @@ categories = ["development-tools", "algorithms"]
 readme = "../../README.md"
 
 [dependencies]
-sem-core = "0.3.9"
+sem-core = "0.3.10"
 diffy = "0.4"
 thiserror = "2"
 tempfile = "3"
