@@ -1,16 +1,18 @@
 [package]
 name = "weave-github"
-version = "0.1.0"
+version = "0.2.6"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+description = "GitHub webhook handler for entity-level semantic merges"
+repository = "https://github.com/ataraxy-labs/weave"
 
 [[bin]]
 name = "weave-github"
 path = "src/main.rs"
 
 [dependencies]
-weave-core = { path = "../weave-core" }
-sem-core = "0.3.9"
+weave-core = { version = "0.2.6", path = "../weave-core" }
+sem-core = "0.3.12"
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }

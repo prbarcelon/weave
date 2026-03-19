@@ -531,6 +531,18 @@ pub fn entity_merge_with_registry(
         }
     }
 
+    // Safety net: detect silent data loss from inner merge.
+    // If the merged result is significantly shorter than both inputs and has no
+    // conflict markers, the inner merge likely garbled content. Fall back to git.
+    if entity_markers == 0 {
+        let merged_len = entity_result.content.len();
+        let min_input_len = ours.len().min(theirs.len());
+        // If result is less than 80% of the shorter input, something went wrong
+        if min_input_len > 200 && merged_len < min_input_len * 80 / 100 {
+            return git_merge_file(base, ours, theirs, &mut stats);
+        }
+    }
+
     entity_result
 }
 
@@ -2404,14 +2416,20 @@ fn try_inner_entity_merge(
 
     // Detect if members are single-line (fields, variants) vs multi-line (methods)
     let has_multiline_members = merged_members.iter().any(|m| m.contains('\n'));
+    // Check if the original content had blank lines between members
+    let original_has_blank_separators = {
+        let body = ours_header.len()..ours.rfind(ours_footer).unwrap_or(ours.len());
+        let body_content = &ours[body];
+        body_content.contains("\n\n")
+    };
 
     for (i, member) in merged_members.iter().enumerate() {
         result.push_str(member);
         if !member.ends_with('\n') {
             result.push('\n');
         }
-        // Add blank line between multi-line members (methods) but not single-line (fields, variants)
-        if i < merged_members.len() - 1 && has_multiline_members && !member.ends_with("\n\n") {
+        // Add blank line between multi-line members only if the original had them
+        if i < merged_members.len() - 1 && has_multiline_members && original_has_blank_separators && !member.ends_with("\n\n") {
             result.push('\n');
         }
     }
@@ -2662,8 +2680,7 @@ fn extract_member_chunks(content: &str) -> Option<Vec<MemberChunk>> {
             && !trimmed.starts_with("*")
             && !trimmed.starts_with("#")
             && !trimmed.starts_with("@")
-            && trimmed != "}"
-            && trimmed != "};"
+            && !trimmed.starts_with("}")
             && trimmed != ","
         {
             // Save previous chunk
@@ -2705,6 +2722,17 @@ fn extract_member_chunks(content: &str) -> Option<Vec<MemberChunk>> {
                 name,
                 content: current_chunk_lines.join("\n"),
             });
+        }
+    }
+
+    // Post-process: if any chunk has a brace-only name (anonymous struct literal
+    // entries like Go's `{ Name: "x", ... }`), derive a name from the first
+    // key-value field inside the chunk to avoid HashMap collisions.
+    for chunk in &mut chunks {
+        if chunk.name == "{" || chunk.name == "{}" {
+            if let Some(better) = derive_name_from_struct_literal(&chunk.content) {
+                chunk.name = better;
+            }
         }
     }
 
@@ -2786,6 +2814,25 @@ fn extract_member_name(line: &str) -> String {
     } else {
         name
     }
+}
+
+/// For anonymous struct literal entries (e.g., Go slice entries starting with `{`),
+/// derive a name from the first key-value field inside the chunk.
+/// E.g., `{ Name: "panelTitleSearch", ... }` → `panelTitleSearch`
+fn derive_name_from_struct_literal(content: &str) -> Option<String> {
+    for line in content.lines().skip(1) {
+        let trimmed = line.trim().trim_end_matches(',');
+        // Look for `Key: "value"` or `Key: value` pattern
+        if let Some(colon_pos) = trimmed.find(':') {
+            let value = trimmed[colon_pos + 1..].trim();
+            // Strip quotes from string values
+            let value = value.trim_matches('"').trim_matches('\'');
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
 }
 
 /// Returns true for data/config file formats where Sesame separator expansion

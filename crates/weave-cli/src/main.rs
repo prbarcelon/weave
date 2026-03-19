@@ -17,6 +17,8 @@ enum Commands {
         #[arg(long)]
         driver: Option<String>,
     },
+    /// Remove weave merge driver from the current Git repo
+    Unsetup,
     /// Preview what a merge between branches would look like
     Preview {
         /// The branch to merge into HEAD
@@ -85,6 +87,7 @@ fn main() {
         Commands::Setup { ref driver } => {
             commands::setup::run(driver.as_deref())
         }
+        Commands::Unsetup => commands::setup::unsetup(),
         Commands::Preview { ref branch, ref file } => {
             commands::preview::run(branch, file.as_deref())
         }

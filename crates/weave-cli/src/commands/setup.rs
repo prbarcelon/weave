@@ -105,6 +105,58 @@ pub fn run(driver_path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
+pub fn unsetup() -> Result<(), Box<dyn std::error::Error>> {
+    let git_dir = Path::new(".git");
+    if !git_dir.exists() {
+        return Err("Not in a git repository. Run `weave unsetup` from the repo root.".into());
+    }
+
+    // Remove git config for weave merge driver
+    let _ = Command::new("git")
+        .args(["config", "--remove-section", "merge.weave"])
+        .status();
+
+    println!(
+        "{} Removed weave merge driver from git config",
+        "✓".green().bold()
+    );
+
+    // Remove weave patterns from .gitattributes
+    let gitattributes_path = Path::new(".gitattributes");
+    if gitattributes_path.exists() {
+        let content = fs::read_to_string(gitattributes_path)?;
+        let filtered: Vec<&str> = content
+            .lines()
+            .filter(|line| !line.contains("merge=weave"))
+            .collect();
+        let new_content = filtered.join("\n");
+        if filtered.is_empty() || new_content.trim().is_empty() {
+            fs::remove_file(gitattributes_path)?;
+            println!(
+                "{} Removed .gitattributes (was only weave patterns)",
+                "✓".green().bold()
+            );
+        } else {
+            let mut out = new_content;
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+            fs::write(gitattributes_path, out)?;
+            println!(
+                "{} Cleaned weave patterns from .gitattributes",
+                "✓".green().bold()
+            );
+        }
+    }
+
+    println!(
+        "\n{} Weave has been removed. Git will use its default merge strategy.",
+        "Done!".green().bold()
+    );
+
+    Ok(())
+}
+
 fn which_driver() -> Result<String, Box<dyn std::error::Error>> {
     // Check if weave-driver is next to current executable
     if let Ok(exe) = std::env::current_exe() {
