@@ -5,6 +5,10 @@ use rmcp::ServiceExt;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::args().any(|a| a == "--version" || a == "-V") {
+        println!("weave-mcp {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     // Log to stderr so it doesn't interfere with MCP stdio transport
     tracing_subscriber::fmt()
         .with_env_filter(

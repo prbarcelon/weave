@@ -3,7 +3,7 @@ mod commands;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "weave", about = "Entity-level semantic merge for Git")]
+#[command(name = "weave", about = "Entity-level semantic merge for Git", version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

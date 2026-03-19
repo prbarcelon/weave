@@ -17,6 +17,10 @@ fn main() {
     let mut i = 1;
     while i < raw_args.len() {
         match raw_args[i].as_str() {
+            "--version" | "-V" => {
+                println!("weave-driver {}", env!("CARGO_PKG_VERSION"));
+                process::exit(0);
+            }
             "-o" | "--output" => {
                 if i + 1 < raw_args.len() {
                     output_override = Some(raw_args[i + 1].clone());
