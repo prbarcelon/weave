@@ -11,7 +11,7 @@
   <a href="https://formulae.brew.sh/formula/weave"><img src="https://img.shields.io/badge/homebrew-weave-orange" alt="Homebrew"></a>
   <img src="https://img.shields.io/badge/rust-stable-orange" alt="Rust">
   <img src="https://img.shields.io/badge/tests-124_passing-brightgreen" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.2.5-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.2.6-blue" alt="Version">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow" alt="License"></a>
   <img src="https://img.shields.io/badge/languages-21-blue" alt="Languages">
 </p>
@@ -140,6 +140,12 @@ weave setup
 ```
 
 This configures Git to use weave for all supported file types. Then use `git merge` as normal.
+
+To revert back to normal git merging:
+
+```bash
+weave unsetup
+```
 
 To set up for just yourself (without modifying `.gitattributes`), use `.git/info/attributes` instead:
 
