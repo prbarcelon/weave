@@ -152,7 +152,19 @@ To set up for just yourself (without modifying `.gitattributes`), use `.git/info
 ```bash
 git config merge.weave.name "Entity-level semantic merge"
 git config merge.weave.driver "weave-driver %O %A %B %L %P"
-echo "*.ts *.tsx *.js *.py *.go *.rs *.java *.c *.cpp *.rb *.cs merge=weave" >> .git/info/attributes
+cat >> .git/info/attributes << 'EOF'
+*.ts merge=weave
+*.tsx merge=weave
+*.js merge=weave
+*.py merge=weave
+*.go merge=weave
+*.rs merge=weave
+*.java merge=weave
+*.c merge=weave
+*.cpp merge=weave
+*.rb merge=weave
+*.cs merge=weave
+EOF
 ```
 
 ## Jujutsu (jj)
