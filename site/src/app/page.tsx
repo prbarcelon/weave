@@ -46,7 +46,7 @@ export default function Home() {
 
         {/* Install */}
         <div className="mb-16">
-          <pre><code>brew install ataraxy-labs/tap/weave</code></pre>
+          <pre><code>brew install weave</code></pre>
         </div>
       </section>
 
@@ -244,7 +244,7 @@ export default function Home() {
           <div className="space-y-6">
             <div>
               <p className="text-sm text-gray-500 mb-2">Install</p>
-              <pre><code>brew install ataraxy-labs/tap/weave</code></pre>
+              <pre><code>brew install weave</code></pre>
             </div>
             <div>
               <p className="text-sm text-gray-500 mb-2">Set up in your repository</p>

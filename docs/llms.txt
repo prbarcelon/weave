@@ -11,7 +11,7 @@ Two developers editing different functions in the same file? No conflict. Git wo
 ## Install
 
 ```
-brew install ataraxy-labs/tap/weave
+brew install weave
 weave setup
 ```
 
@@ -101,6 +101,6 @@ weave plugs into git as a merge driver. Works with merge, rebase, and cherry-pic
 ## Links
 
 - GitHub: https://github.com/Ataraxy-Labs/weave
-- Homebrew: brew install ataraxy-labs/tap/weave
+- Homebrew: brew install weave
 - Entity extraction: https://github.com/Ataraxy-Labs/sem (sem-core)
 - License: MIT
