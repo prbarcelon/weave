@@ -87,6 +87,50 @@
 
     <section style="border-top: none; padding-top: 12px;">
 
+      <!-- v0.2.6 -->
+      <div class="commit">
+        <div class="commit-header">
+          <span class="commit-date">Mar 22, 2026</span>
+        </div>
+        <div class="commit-title">v0.2.6 — Go grouped declarations, inner merge safety, unsetup command</div>
+        <div class="commit-tags">
+          <span class="commit-tag" style="background: #4ade8022; color: var(--green);">feature</span>
+          <span class="commit-tag" style="background: #fb923c22; color: var(--orange);">fix</span>
+          <span class="commit-tag" style="background: #fb923c22; color: var(--orange);">release</span>
+        </div>
+        <div class="commit-body">
+          <p>Bumps sem-core to 0.3.12 and adds quality-of-life improvements. 124 tests passing.</p>
+          <ul>
+            <li><strong>Go grouped declarations</strong>: sem-core now correctly extracts individual declarations from Go <code>var()</code>, <code>const()</code>, and <code>type()</code> blocks instead of treating the whole group as one entity.</li>
+            <li><strong>JS/TS scope boundaries</strong>: local variables inside function bodies are no longer extracted as top-level entities. Fixes incorrect entity extraction that could cause false merge conflicts. Thanks <a href="https://github.com/c22" style="color:var(--cyan)">@c22</a>.</li>
+            <li><strong>Inner merge safety net</strong>: prevents accidental data loss during inner entity merging.</li>
+            <li><strong><code>weave unsetup</code></strong>: cleanly removes weave from a repository's git config.</li>
+            <li><strong>Homebrew core</strong>: install with <code>brew install weave</code> (no tap needed).</li>
+            <li><strong>ERB support</strong>: 21st language via tree-sitter-embedded-template.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- v0.2.4-0.2.5 -->
+      <div class="commit">
+        <div class="commit-header">
+          <span class="commit-date">Mar 14, 2026</span>
+        </div>
+        <div class="commit-title">v0.2.4-0.2.5 — diff3 conflict markers for jj, impl block fix</div>
+        <div class="commit-tags">
+          <span class="commit-tag" style="background: #4ade8022; color: var(--green);">feature</span>
+          <span class="commit-tag" style="background: #fb923c22; color: var(--orange);">fix</span>
+        </div>
+        <div class="commit-body">
+          <p>Two releases focused on compatibility and correctness.</p>
+          <ul>
+            <li><strong>diff3 conflict markers</strong>: weave now emits scoped diff3-style conflict markers with a base section, compatible with <code>jj</code> and other tools that expect three-way markers.</li>
+            <li><strong>Impl block name collision fix</strong>: Rust <code>impl</code> blocks with the same struct name but different trait implementations are now correctly distinguished.</li>
+            <li><strong>Multi-line import merging</strong>: improved handling of multi-line import statements during inner merge.</li>
+          </ul>
+        </div>
+      </div>
+
       <!-- v0.2.0: Performance & merge quality -->
       <div class="commit">
         <div class="commit-header">
