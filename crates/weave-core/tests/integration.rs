@@ -232,6 +232,61 @@ fn json_different_keys_modified() {
     assert!(result.content.contains("updated description"));
 }
 
+/// Regression test for issue #36: closing delimiter placed too early when
+/// multiple lines are added at end of a JSON file.
+#[test]
+fn json_multiple_keys_added_at_end() {
+    let base = r#"{
+  "key.aaa": "aaa",
+  "key.bbb": "bbb",
+  "key.ccc": "ccc"
+}
+"#;
+    // Feature: modify one value
+    let ours = r#"{
+  "key.aaa": "aaa",
+  "key.bbb": "BBB",
+  "key.ccc": "ccc"
+}
+"#;
+    // Main: add 2 keys at the end
+    let theirs = r#"{
+  "key.aaa": "aaa",
+  "key.bbb": "bbb",
+  "key.ccc": "ccc",
+  "key.xxx": "xxx",
+  "key.yyy": "yyy"
+}
+"#;
+
+    let result = entity_merge(base, ours, theirs, "data.json");
+    assert!(
+        result.is_clean(),
+        "JSON: modify value + add keys at end should auto-resolve. Conflicts: {:?}",
+        result.conflicts
+    );
+    assert!(result.content.contains("\"BBB\""), "Should keep ours modification");
+    assert!(result.content.contains("\"key.xxx\""), "Should include first added key");
+    assert!(result.content.contains("\"key.yyy\""), "Should include second added key");
+
+    // Closing brace must come after ALL added keys, not just the first
+    let brace_pos = result.content.rfind('}').unwrap();
+    let yyy_pos = result.content.find("key.yyy").unwrap();
+    assert!(
+        brace_pos > yyy_pos,
+        "Closing brace must come after key.yyy. Got:\n{}",
+        result.content
+    );
+
+    // Result should be valid JSON structure (no orphaned lines after closing brace)
+    let after_brace = result.content[brace_pos + 1..].trim();
+    assert!(
+        after_brace.is_empty(),
+        "No content should appear after closing brace. Got: '{}'",
+        after_brace
+    );
+}
+
 // =============================================================================
 // Commutative import merging
 // =============================================================================

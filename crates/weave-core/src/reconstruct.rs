@@ -89,35 +89,55 @@ pub fn reconstruct(
 
                 emitted_entities.insert(entity_region.entity_id.clone());
 
-                // Insert theirs-only entities that should come after this entity
-                if let Some(insertions) = theirs_insertions.get(&Some(entity_region.entity_id.clone())) {
-                    for theirs_entity in insertions {
-                        if let Some(resolved) = resolved_entities.get(&theirs_entity.id) {
-                            match resolved {
-                                ResolvedEntity::Clean(region) => {
-                                    output.push('\n');
-                                    output.push_str(&region.content);
-                                    if !region.content.is_empty()
-                                        && !region.content.ends_with('\n')
-                                    {
-                                        output.push('\n');
-                                    }
-                                }
-                                ResolvedEntity::Conflict(conflict) => {
-                                    output.push('\n');
-                                    output.push_str(&conflict.to_conflict_markers(marker_format));
-                                }
-                                ResolvedEntity::ScopedConflict { content, .. } => {
-                                    output.push('\n');
-                                    output.push_str(content);
-                                    if !content.is_empty() && !content.ends_with('\n') {
-                                        output.push('\n');
-                                    }
-                                }
-                                ResolvedEntity::Deleted => {}
+                // Insert theirs-only entities that should come after this entity.
+                // Chase the chain: if we insert X after this entity, also insert
+                // anything whose predecessor is X, then anything after that, etc.
+                // This handles multiple sequential additions (e.g. adding 3 keys
+                // at the end of a JSON file).
+                let mut current_pred = Some(entity_region.entity_id.clone());
+                while let Some(ref pred) = current_pred {
+                    if let Some(insertions) = theirs_insertions.get(&Some(pred.clone())) {
+                        let mut next_pred: Option<String> = None;
+                        for theirs_entity in insertions {
+                            if emitted_entities.contains(&theirs_entity.id) {
+                                continue;
                             }
+                            if let Some(resolved) = resolved_entities.get(&theirs_entity.id) {
+                                match resolved {
+                                    ResolvedEntity::Clean(region) => {
+                                        // Only add blank-line separator for multi-line entities
+                                        // (functions, methods). Single-line entities (JSON props,
+                                        // struct fields) don't need one.
+                                        if region.content.trim_end().contains('\n') {
+                                            output.push('\n');
+                                        }
+                                        output.push_str(&region.content);
+                                        if !region.content.is_empty()
+                                            && !region.content.ends_with('\n')
+                                        {
+                                            output.push('\n');
+                                        }
+                                    }
+                                    ResolvedEntity::Conflict(conflict) => {
+                                        output.push('\n');
+                                        output.push_str(&conflict.to_conflict_markers(marker_format));
+                                    }
+                                    ResolvedEntity::ScopedConflict { content, .. } => {
+                                        output.push('\n');
+                                        output.push_str(content);
+                                        if !content.is_empty() && !content.ends_with('\n') {
+                                            output.push('\n');
+                                        }
+                                    }
+                                    ResolvedEntity::Deleted => {}
+                                }
+                            }
+                            emitted_entities.insert(theirs_entity.id.clone());
+                            next_pred = Some(theirs_entity.id.clone());
                         }
-                        emitted_entities.insert(theirs_entity.id.clone());
+                        current_pred = next_pred;
+                    } else {
+                        break;
                     }
                 }
             }
