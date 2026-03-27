@@ -3,392 +3,260 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>weave — Entity-Level Semantic Merge for Git</title>
+  <title>weave — Merge without conflicts</title>
   <link rel="stylesheet" href="style.css">
+  <style>
+    .side-by-side {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 24px 0;
+    }
+    .side-by-side .terminal { margin: 0; }
+
+    .score-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+      font-size: 13px;
+    }
+    .score-label { width: 80px; text-align: right; color: var(--dim); }
+    .score-bar-bg {
+      flex: 1; height: 28px; background: var(--surface);
+      border-radius: 6px; overflow: hidden;
+    }
+    .score-bar-fill {
+      height: 100%; border-radius: 6px;
+      width: 0; transition: width 1s ease 0.3s;
+    }
+    .score-value { width: 120px; font-weight: 600; }
+
+    .stat-pills { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 24px; }
+    .stat-pill {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; padding: 8px 16px; font-size: 13px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .stat-pill .val { font-weight: 700; }
+    .stat-pill .lbl { color: var(--dim); }
+
+    .lang-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .lang-chip {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; padding: 6px 12px; font-size: 12px;
+      color: var(--fg); transition: border-color 0.2s;
+    }
+    .lang-chip:hover { border-color: #444; }
+    .lang-chip.data { color: var(--dim); border-style: dashed; }
+
+    .fade-in {
+      opacity: 0; transform: translateY(20px);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
+    .fade-in.visible { opacity: 1; transform: translateY(0); }
+
+    .try-terminal { max-width: 520px; margin: 0 auto; }
+
+    @media (max-width: 640px) {
+      .side-by-side { grid-template-columns: 1fr; }
+    }
+  </style>
 </head>
 <body>
   <div class="container">
     <nav>
       <a class="logo" href="index.html">weave</a>
       <div class="links">
-        <a href="index.html" class="active">Home</a>
         <a href="docs.html">Docs</a>
         <a href="learn.html">Learn</a>
         <a href="benchmarks.html">Benchmarks</a>
         <a href="changelog.html">Changelog</a>
         <a href="https://github.com/Ataraxy-Labs/weave">GitHub</a>
+        <a href="llms.txt">llms.txt</a>
       </div>
     </nav>
 
-    <!-- Header -->
-    <div style="padding: 48px 0 32px; text-align: center;">
-      <h1 style="font-size: 36px; font-weight: 700; color: var(--accent); letter-spacing: -1.5px; margin-bottom: 12px;">Merge without conflicts.</h1>
-      <p style="font-size: 14px; color: var(--dim); margin-bottom: 24px; line-height: 1.7; max-width: 540px; margin-left: auto; margin-right: auto;">
-        Entity-level semantic merge driver for Git. Understands functions, classes, and properties &mdash; so two agents editing different functions in the same file merge cleanly.
+    <!-- Act 1: Hero -->
+    <div style="padding: 60px 0 20px; text-align: center;">
+      <h1 style="font-size: 42px; font-weight: 700; color: var(--accent); letter-spacing: -2px; margin-bottom: 12px;">Merge without conflicts.</h1>
+      <p style="font-size: 14px; color: var(--dim); margin-bottom: 32px; line-height: 1.7; max-width: 500px; margin-left: auto; margin-right: auto;">
+        Entity-level semantic merge driver for Git. Two agents edit different functions in the same file? Clean merge. Every time.
       </p>
+    </div>
+
+    <!-- Side-by-side: git merge vs weave -->
+    <div class="side-by-side fade-in">
+      <div class="terminal">
+        <div class="terminal-bar">
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <div class="terminal-title">git merge</div>
+        </div>
+        <div class="terminal-body">
+<pre><span class="d"># Two agents edited different functions</span>
+
+<span class="cmd">$ git merge feature-b</span>
+<span class="r">CONFLICT (content): Merge conflict in src/lib.ts</span>
+<span class="r">Automatic merge failed.</span>
+
+<span class="d"># Git sees overlapping lines.</span>
+<span class="d"># The functions don't actually overlap.</span></pre>
+        </div>
+      </div>
+      <div class="terminal">
+        <div class="terminal-bar">
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <div class="terminal-title">weave</div>
+        </div>
+        <div class="terminal-body">
+<pre><span class="d"># Same merge, with weave configured</span>
+
+<span class="cmd">$ git merge feature-b</span>
+<span class="d">weave [src/lib.ts]:</span>
+<span class="d">  2 entities matched, 2 modified, 0 conflicts</span>
+<span class="g">Merge made by the 'ort' strategy.</span>
+
+<span class="d"># Different functions = no conflict.</span></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Install -->
+    <div style="text-align: center; margin: 32px 0 40px;">
       <div class="install-box" onclick="copyCmd(this, 'brew install weave')" style="display: inline-block; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 20px; font-size: 14px; color: var(--fg); cursor: pointer; position: relative;">
         <span class="copied" style="position: absolute; top: -28px; left: 50%; transform: translateX(-50%); font-size: 12px; color: var(--green); opacity: 0; transition: opacity 0.2s;">copied</span>
         <span style="color: var(--dim);">$</span> brew install weave
       </div>
     </div>
 
-    <!-- Terminal demo: the problem -->
-    <div class="terminal">
-      <div class="terminal-bar">
-        <div class="terminal-dot"></div>
-        <div class="terminal-dot"></div>
-        <div class="terminal-dot"></div>
-        <div class="terminal-title">the problem</div>
+    <!-- Act 2: The Proof -->
+    <section class="fade-in">
+      <h2>31 out of 31.</h2>
+      <p class="section-desc">31 merge scenarios across 7 languages. <a href="benchmarks.html" style="color:var(--cyan)">Full breakdown &rarr;</a></p>
+
+      <div style="max-width: 600px;">
+        <div class="score-row">
+          <span class="score-label" style="color:var(--green)">weave</span>
+          <div class="score-bar-bg">
+            <div class="score-bar-fill" style="background: var(--green);" data-width="100"></div>
+          </div>
+          <span class="score-value" style="color:var(--green)">31/31 (100%)</span>
+        </div>
+        <div class="score-row">
+          <span class="score-label">mergiraf</span>
+          <div class="score-bar-bg">
+            <div class="score-bar-fill" style="background: var(--dim);" data-width="83.9"></div>
+          </div>
+          <span class="score-value" style="color:var(--dim)">26/31 (83%)</span>
+        </div>
+        <div class="score-row">
+          <span class="score-label">git</span>
+          <div class="score-bar-bg">
+            <div class="score-bar-fill" style="background: var(--dim2);" data-width="48.4"></div>
+          </div>
+          <span class="score-value" style="color:var(--dim)">15/31 (48%)</span>
+        </div>
       </div>
-      <div class="terminal-body">
-<pre><span class="d"># Two agents edit different functions in the same file</span>
-<span class="d"># Agent 1 modifies processData()</span>
-<span class="d"># Agent 2 modifies validateInput()</span>
 
-<span class="cmd">$ git merge feature-b</span>
-<span class="r">CONFLICT (content): Merge conflict in src/lib.ts</span>
-<span class="r">Automatic merge failed; fix conflicts and then commit.</span>
-
-<span class="d"># Git sees overlapping line ranges &mdash; false conflict.</span>
-<span class="d"># The functions don't actually overlap. Git doesn't know that.</span></pre>
+      <div class="stat-pills">
+        <div class="stat-pill">
+          <span class="val" style="color:var(--green)">83</span>
+          <span class="lbl">real-world wins</span>
+        </div>
+        <div class="stat-pill">
+          <span class="val" style="color:var(--green)">0</span>
+          <span class="lbl">regressions on C, Python, Go</span>
+        </div>
+        <div class="stat-pill">
+          <span class="val" style="color:var(--accent)">4,917</span>
+          <span class="lbl">file merges tested</span>
+        </div>
       </div>
-    </div>
+    </section>
 
-    <div class="terminal">
-      <div class="terminal-bar">
-        <div class="terminal-dot"></div>
-        <div class="terminal-dot"></div>
-        <div class="terminal-dot"></div>
-        <div class="terminal-title">the solution</div>
-      </div>
-      <div class="terminal-body">
-<pre><span class="cmd">$ weave setup</span>
-<span class="g">&#10003;</span> Merge driver configured for *.ts, *.js, *.py, *.go, *.rs, ...
-
-<span class="cmd">$ git merge feature-b</span>
-<span class="d">weave [src/lib.ts]: 2 entities matched, 2 modified, 0 conflicts</span>
-<span class="g">Merge made by the 'ort' strategy.</span>
-
-<span class="d"># weave understands functions. Different functions = no conflict.</span></pre>
-      </div>
-    </div>
-
-    <!-- Three Phases -->
-    <section>
-      <h2>Three phases</h2>
-      <p class="section-desc">weave has three layers, each building on the last. Use just the merge driver, or add coordination for multi-agent workflows.</p>
+    <!-- Act 3: The Stack -->
+    <section class="fade-in">
+      <h2>Three layers</h2>
+      <p class="section-desc">Use just the merge driver. Or add coordination for multi-agent workflows. <a href="docs.html" style="color:var(--cyan)">Full docs &rarr;</a></p>
 
       <div class="phase-cards">
         <div class="phase-card" style="border-color: var(--green);">
-          <div class="tag" style="background: #4ade8022; color: var(--green);">PHASE 1</div>
+          <div class="tag" style="background: #4ade8022; color: var(--green);">MERGE</div>
           <h3>Merge Driver</h3>
-          <p>Replaces git's line-level merge with entity-level merge. Parses code with tree-sitter, merges by function/class instead of by line.</p>
+          <p>Replaces git's line-level merge. Parses code with tree-sitter, merges by function and class.</p>
         </div>
         <div class="phase-card" style="border-color: var(--purple);">
-          <div class="tag" style="background: #a78bfa22; color: var(--purple);">PHASE 2</div>
+          <div class="tag" style="background: #a78bfa22; color: var(--purple);">COORDINATE</div>
           <h3>CRDT State</h3>
-          <p>Persistent "who's editing what" state. Agents claim entities before editing, detect conflicts before they happen.</p>
+          <p>Agents claim entities before editing. Detect conflicts before they happen.</p>
         </div>
         <div class="phase-card" style="border-color: var(--cyan);">
-          <div class="tag" style="background: #22d3ee22; color: var(--cyan);">PHASE 3</div>
+          <div class="tag" style="background: #22d3ee22; color: var(--cyan);">CONNECT</div>
           <h3>MCP Server</h3>
-          <p>15 tools exposed via Model Context Protocol. Claude and other AI agents call them directly to coordinate work.</p>
+          <p>15 tools via Model Context Protocol. Claude and other AI agents call them directly.</p>
         </div>
       </div>
     </section>
 
-    <!-- weave vs git -->
-    <section>
-      <h2>weave vs git merge</h2>
-      <p class="section-desc">git merges lines. mergiraf merges tree nodes. weave merges entities. <a href="learn.html" style="color:var(--cyan)">Read the full deep dive &rarr;</a></p>
-      <div class="comparison-table">
-        <table>
-          <thead>
-            <tr>
-              <th>Scenario</th>
-              <th>git merge</th>
-              <th>mergiraf</th>
-              <th>weave merge</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Two agents edit different functions</td>
-              <td class="lose">CONFLICT (adjacent lines)</td>
-              <td class="win">auto-resolved</td>
-              <td class="win">auto-resolved</td>
-            </tr>
-            <tr>
-              <td>One adds function, one modifies another</td>
-              <td class="lose">often conflicts</td>
-              <td class="win">auto-resolved</td>
-              <td class="win">auto-resolved</td>
-            </tr>
-            <tr>
-              <td>Both modify the same function identically</td>
-              <td class="lose">CONFLICT</td>
-              <td class="win">auto-resolved</td>
-              <td class="win">detected as identical, uses either</td>
-            </tr>
-            <tr>
-              <td>Both modify the same function differently</td>
-              <td class="lose">CONFLICT</td>
-              <td class="lose">CONFLICT</td>
-              <td style="color:var(--yellow)">attempts 3-way merge on entity body</td>
-            </tr>
-            <tr>
-              <td>One deletes, one modifies</td>
-              <td class="lose">silent data loss possible</td>
-              <td style="color:var(--yellow)">depends on context</td>
-              <td class="win">modify/delete conflict reported</td>
-            </tr>
-            <tr>
-              <td>Both add functions at same position</td>
-              <td class="lose">CONFLICT</td>
-              <td class="lose">CONFLICT</td>
-              <td class="win">auto-resolved (unordered entities)</td>
-            </tr>
-            <tr>
-              <td>Python: both add decorators to function</td>
-              <td class="lose">CONFLICT</td>
-              <td class="lose">CONFLICT</td>
-              <td class="win">auto-resolved (decorator bundling)</td>
-            </tr>
-          </tbody>
-        </table>
+    <!-- Languages -->
+    <section class="fade-in">
+      <h2>21 languages</h2>
+      <p class="section-desc">Entity extraction powered by <a href="https://github.com/Ataraxy-Labs/sem" style="color:var(--green)">sem-core</a> and tree-sitter. Plus 5 data formats. <a href="docs.html#languages" style="color:var(--cyan)">Full list &rarr;</a></p>
+
+      <div class="lang-chips">
+        <span class="lang-chip">TypeScript</span>
+        <span class="lang-chip">JavaScript</span>
+        <span class="lang-chip">Python</span>
+        <span class="lang-chip">Go</span>
+        <span class="lang-chip">Rust</span>
+        <span class="lang-chip">Java</span>
+        <span class="lang-chip">C</span>
+        <span class="lang-chip">C++</span>
+        <span class="lang-chip">C#</span>
+        <span class="lang-chip">Ruby</span>
+        <span class="lang-chip">PHP</span>
+        <span class="lang-chip">Swift</span>
+        <span class="lang-chip">Kotlin</span>
+        <span class="lang-chip">Elixir</span>
+        <span class="lang-chip">Bash</span>
+        <span class="lang-chip">HCL</span>
+        <span class="lang-chip">Fortran</span>
+        <span class="lang-chip">Vue</span>
+        <span class="lang-chip">Svelte</span>
+        <span class="lang-chip">XML</span>
+        <span class="lang-chip">ERB</span>
+        <span class="lang-chip data">JSON</span>
+        <span class="lang-chip data">YAML</span>
+        <span class="lang-chip data">TOML</span>
+        <span class="lang-chip data">CSV</span>
+        <span class="lang-chip data">Markdown</span>
       </div>
     </section>
 
-    <!-- Real-World Benchmarks -->
-    <section>
-      <h2>Real-world benchmarks</h2>
-      <p class="section-desc">Tested on real merge commits from major open-source repos. For each merge commit, we replay the merge with both git and weave, then compare against the human-authored result. Every "win" is a merge where git conflicted but weave resolved cleanly.</p>
-      <div class="comparison-table">
-        <table>
-          <thead>
-            <tr>
-              <th>Repository</th>
-              <th>Language</th>
-              <th>Merges</th>
-              <th>Wins</th>
-              <th>Regressions</th>
-              <th>Human Match</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><a href="https://github.com/git/git" style="color:var(--cyan)">git/git</a></td>
-              <td>C</td>
-              <td>1,319</td>
-              <td class="win">39</td>
-              <td class="win">0</td>
-              <td>64%</td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/pallets/flask" style="color:var(--cyan)">Flask</a></td>
-              <td>Python</td>
-              <td>56</td>
-              <td class="win">14</td>
-              <td class="win">0</td>
-              <td>57%</td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/python/cpython" style="color:var(--cyan)">CPython</a></td>
-              <td>C / Python</td>
-              <td>256</td>
-              <td class="win">7</td>
-              <td class="win">0</td>
-              <td>29%</td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/golang/go" style="color:var(--cyan)">Go</a></td>
-              <td>Go</td>
-              <td>1,247</td>
-              <td class="win">19</td>
-              <td class="win">0</td>
-              <td>58%</td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/microsoft/TypeScript" style="color:var(--cyan)">TypeScript</a></td>
-              <td>TypeScript</td>
-              <td>1,639</td>
-              <td class="win">4</td>
-              <td style="color:var(--yellow)">3</td>
-              <td>75%</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p style="font-size:13px;color:var(--dim);margin-top:16px;line-height:1.7;">
-        <strong style="color:var(--green)">Zero regressions</strong> on C, Python, and Go. <a href="benchmarks.html" style="color:var(--cyan)">Full breakdown with methodology &rarr;</a>
-      </p>
-    </section>
+    <!-- Try It -->
+    <section class="fade-in" style="text-align: center;">
+      <h2>Try it. 5 seconds.</h2>
+      <div class="try-terminal">
+        <div class="terminal">
+          <div class="terminal-bar">
+            <div class="terminal-dot"></div>
+            <div class="terminal-dot"></div>
+            <div class="terminal-dot"></div>
+            <div class="terminal-title">~/my-project</div>
+          </div>
+          <div class="terminal-body" style="text-align: left;">
+<pre><span class="cmd">$ brew install weave</span>
 
-    <!-- Synthetic Benchmark Results -->
-    <section>
-      <h2>Synthetic benchmarks</h2>
-      <p class="section-desc">31 hand-crafted merge scenarios across 7 languages. Run <code style="background:var(--surface);padding:2px 6px;border-radius:3px;font-size:12px;">weave bench</code> to reproduce.</p>
-      <div class="comparison-table">
-        <table>
-          <thead>
-            <tr>
-              <th>Scenario</th>
-              <th>weave</th>
-              <th>mergiraf</th>
-              <th>git</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr><td>Different functions modified</td><td class="win">clean</td><td class="win">clean</td><td class="win">clean</td></tr>
-            <tr><td>Different class methods modified</td><td class="win">clean</td><td class="win">clean</td><td class="win">clean</td></tr>
-            <tr><td>Both add different imports (TS)</td><td class="win">clean</td><td class="win">clean</td><td class="lose">CONFLICT</td></tr>
-            <tr><td>Class: different methods among 4</td><td class="win">clean</td><td class="win">clean</td><td class="win">clean</td></tr>
-            <tr><td>One adds, other modifies</td><td class="win">clean</td><td class="win">clean</td><td class="win">clean</td></tr>
-            <tr><td>Adjacent function changes</td><td class="win">clean</td><td class="win">clean</td><td class="win">clean</td></tr>
-            <tr><td>Python: different class methods</td><td class="win">clean</td><td class="win">clean</td><td class="win">clean</td></tr>
-            <tr><td>Python: adjacent methods (4-method class)</td><td class="win">clean</td><td class="win">clean</td><td class="win">clean</td></tr>
-            <tr><td>Both add exports at end of file</td><td class="win">clean</td><td class="lose">CONFLICT</td><td class="lose">CONFLICT</td></tr>
-            <tr><td>Reformat vs modify (whitespace-aware)</td><td class="win">clean</td><td class="win">clean</td><td class="lose">CONFLICT</td></tr>
-            <tr><td>Both add functions at end of file</td><td class="win">clean</td><td class="lose">CONFLICT</td><td class="lose">CONFLICT</td></tr>
-            <tr><td>Both add methods to class at end</td><td class="win">clean</td><td class="win">clean</td><td class="lose">CONFLICT</td></tr>
-            <tr><td>Rust: both add different use statements</td><td class="win">clean</td><td class="win">clean</td><td class="lose">CONFLICT</td></tr>
-            <tr><td>Python: both add different imports</td><td class="win">clean</td><td class="win">clean</td><td class="lose">CONFLICT</td></tr>
-            <tr><td>Class: modify method + add new</td><td class="win">clean</td><td class="win">clean</td><td class="win">clean</td></tr>
-            <tr><td>Both add functions between existing</td><td class="win">clean</td><td class="lose">CONFLICT</td><td class="lose">CONFLICT</td></tr>
-            <tr><td>Python: both add different decorators</td><td class="win">clean</td><td class="lose">CONFLICT</td><td class="lose">CONFLICT</td></tr>
-            <tr><td>Decorator + body change</td><td class="win">clean</td><td class="win">clean</td><td class="win">clean</td></tr>
-            <tr><td>TS: class method decorators</td><td class="win">clean</td><td class="lose">CONFLICT</td><td class="lose">CONFLICT</td></tr>
-            <tr><td>TS: interface field additions</td><td class="win">clean</td><td class="win">clean</td><td class="lose">CONFLICT</td></tr>
-            <tr><td>Rust: enum variant additions</td><td class="win">clean</td><td class="win">clean</td><td class="lose">CONFLICT</td></tr>
-            <tr><td>Java: different methods in same class</td><td class="win">clean</td><td class="win">clean</td><td class="win">clean</td></tr>
-            <tr><td>Java: both add annotations</td><td class="win">clean</td><td class="win">clean</td><td class="lose">CONFLICT</td></tr>
-            <tr><td>C: different functions modified</td><td class="win">clean</td><td class="win">clean</td><td class="win">clean</td></tr>
-            <tr><td>TS: method reorder + modification</td><td class="win">clean</td><td class="win">clean</td><td class="win">clean</td></tr>
-            <tr><td>Python: both add class methods</td><td class="win">clean</td><td class="win">clean</td><td class="lose">CONFLICT</td></tr>
-            <tr><td>Rust: both add impl methods</td><td class="win">clean</td><td class="win">clean</td><td class="lose">CONFLICT</td></tr>
-            <tr><td>TS: enum modify + add variant</td><td class="win">clean</td><td class="win">clean</td><td class="win">clean</td></tr>
-            <tr><td>TS: add JSDoc + modify body</td><td class="win">clean</td><td class="win">clean</td><td class="win">clean</td></tr>
-            <tr><td>Rust: both add doc comments to different fns</td><td class="win">clean</td><td class="win">clean</td><td class="win">clean</td></tr>
-            <tr><td>Go: both add different functions</td><td class="win">clean</td><td class="win">clean</td><td class="lose">CONFLICT</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p style="font-size:13px;color:var(--dim);margin-top:16px;line-height:1.7;">
-        <strong style="color:var(--accent)">weave: 31/31 clean (100%)</strong> vs <strong style="color:var(--dim)">mergiraf: 26/31 (83%)</strong> vs <strong style="color:var(--dim)">git: 15/31 (48%)</strong>.
-        Full benchmark suite runs in <strong style="color:var(--green)">11ms</strong>. Individual merges take 65-374&micro;s. Entity extraction powered by <a href="https://github.com/Ataraxy-Labs/sem" style="color:var(--green)">sem-core</a> with xxHash64 structural hashing and parallel tree-sitter parsing.
-      </p>
-    </section>
+<span class="cmd">$ cd my-project && weave setup</span>
+<span class="g">&#10003;</span> Merge driver configured
 
-    <!-- Supported Languages -->
-    <section>
-      <h2>Supported languages</h2>
-      <p class="section-desc">Entity extraction powered by <a href="https://github.com/Ataraxy-Labs/sem" style="color:var(--green)">sem-core</a> and tree-sitter.</p>
-      <table>
-        <thead>
-          <tr><th>Language</th><th>Extensions</th><th>Entities</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>TypeScript</td><td>.ts .tsx</td><td>functions, classes, interfaces, types, enums, exports</td></tr>
-          <tr><td>JavaScript</td><td>.js .jsx .mjs .cjs</td><td>functions, classes, variables, exports</td></tr>
-          <tr><td>Python</td><td>.py</td><td>functions, classes, decorated definitions</td></tr>
-          <tr><td>Go</td><td>.go</td><td>functions, methods, types, vars, consts</td></tr>
-          <tr><td>Rust</td><td>.rs</td><td>functions, structs, enums, impls, traits, mods, consts</td></tr>
-          <tr><td>Java</td><td>.java</td><td>classes, methods, interfaces, enums, fields, constructors</td></tr>
-          <tr><td>C</td><td>.c .h</td><td>functions, structs, enums, unions, typedefs</td></tr>
-          <tr><td>C++</td><td>.cpp .cc .hpp</td><td>functions, classes, structs, enums, namespaces, templates</td></tr>
-          <tr><td>C#</td><td>.cs</td><td>classes, methods, interfaces, enums, structs, properties</td></tr>
-          <tr><td>Ruby</td><td>.rb</td><td>methods, classes, modules</td></tr>
-          <tr><td>PHP</td><td>.php</td><td>functions, classes, methods, interfaces, traits, enums</td></tr>
-          <tr><td>Swift</td><td>.swift</td><td>functions, classes, protocols, structs, enums, properties</td></tr>
-          <tr><td>Elixir</td><td>.ex .exs</td><td>modules, functions, macros, guards, protocols</td></tr>
-          <tr><td>Bash</td><td>.sh</td><td>functions</td></tr>
-          <tr><td>HCL/Terraform</td><td>.hcl .tf .tfvars</td><td>blocks, attributes (qualified names)</td></tr>
-          <tr><td>Kotlin</td><td>.kt .kts</td><td>classes, interfaces, objects, functions, properties</td></tr>
-          <tr><td>Fortran</td><td>.f90 .f95 .f</td><td>functions, subroutines, modules, programs</td></tr>
-          <tr><td>Vue</td><td>.vue</td><td>template/script/style blocks + inner TS/JS entities</td></tr>
-          <tr><td>XML</td><td>.xml .plist .svg .csproj</td><td>elements (nested, tag-name identity)</td></tr>
-          <tr><td>ERB</td><td>.erb</td><td>blocks, expressions, code tags</td></tr>
-          <tr><td>JSON</td><td>.json</td><td>properties, objects (RFC 6901 paths)</td></tr>
-          <tr><td>YAML</td><td>.yml .yaml</td><td>sections, properties (dot paths)</td></tr>
-          <tr><td>TOML</td><td>.toml</td><td>sections, properties</td></tr>
-          <tr><td>CSV</td><td>.csv .tsv</td><td>rows (first column as ID)</td></tr>
-          <tr><td>Markdown</td><td>.md .mdx</td><td>heading-based sections</td></tr>
-        </tbody>
-      </table>
-    </section>
-
-    <!-- Quick Start -->
-    <section>
-      <h2>Quick start</h2>
-      <p class="section-desc">Get weave running in your repo in 30 seconds.</p>
-
-      <div class="terminal">
-        <div class="terminal-bar">
-          <div class="terminal-dot"></div>
-          <div class="terminal-dot"></div>
-          <div class="terminal-dot"></div>
-          <div class="terminal-title">~/my-project</div>
-        </div>
-        <div class="terminal-body">
-<pre><span class="d"># Install</span>
-<span class="cmd">$ cargo install --git https://github.com/Ataraxy-Labs/weave weave-cli</span>
-<span class="cmd">$ cargo install --git https://github.com/Ataraxy-Labs/weave weave-driver</span>
-
-<span class="d"># Configure your repo</span>
-<span class="cmd">$ cd my-project</span>
-<span class="cmd">$ weave setup</span>
-<span class="g">&#10003;</span> Created .gitattributes with weave merge driver rules
-<span class="g">&#10003;</span> Configured git merge driver 'weave'
-
-<span class="d"># Preview a merge before doing it</span>
-<span class="cmd">$ weave preview feature-branch</span>
-  src/auth.ts &mdash; <span class="g">auto-resolved</span>
-    2 entities matched, 2 modified, 0 conflicts
-  src/config.json &mdash; <span class="g">auto-resolved</span>
-    1 entity matched, 1 modified, 0 conflicts
-
-<span class="g">&#10003;</span> Merge would be clean (2 file(s) auto-resolved by weave)
-
-<span class="d"># Now git merge uses weave automatically</span>
 <span class="cmd">$ git merge feature-branch</span>
 <span class="g">Merge made by the 'ort' strategy.</span></pre>
-        </div>
-      </div>
-
-      <h3 style="font-size: 16px; color: var(--accent); margin: 32px 0 16px;">For AI agents (MCP)</h3>
-
-      <div class="terminal">
-        <div class="terminal-bar">
-          <div class="terminal-dot"></div>
-          <div class="terminal-dot"></div>
-          <div class="terminal-dot"></div>
-          <div class="terminal-title">Claude Code (CLI)</div>
-        </div>
-        <div class="terminal-body">
-<pre><span class="d"># Install the MCP server binary</span>
-<span class="cmd">$ cargo install --git https://github.com/Ataraxy-Labs/weave weave-mcp</span>
-
-<span class="d"># Add to Claude Code (available in all projects)</span>
-<span class="cmd">$ claude mcp add --scope user weave -- weave-mcp</span>
-
-<span class="d"># Restart Claude Code, then verify with /mcp</span></pre>
-        </div>
-      </div>
-
-      <div class="terminal">
-        <div class="terminal-bar">
-          <div class="terminal-dot"></div>
-          <div class="terminal-dot"></div>
-          <div class="terminal-dot"></div>
-          <div class="terminal-title">Claude Desktop</div>
-        </div>
-        <div class="terminal-body">
-<pre><span class="d"># Add to Claude Desktop config (~/.config/claude/claude_desktop_config.json)</span>
-<span class="d">{</span>
-  <span class="b">"mcpServers"</span>: <span class="d">{</span>
-    <span class="b">"weave"</span>: <span class="d">{</span> <span class="b">"command"</span>: <span class="g">"weave-mcp"</span> <span class="d">}</span>
-  <span class="d">}</span>
-<span class="d">}</span></pre>
+          </div>
         </div>
       </div>
     </section>
@@ -407,6 +275,19 @@
         setTimeout(() => copied.classList.remove('show'), 1500);
       }
     }
+
+    // Scroll-triggered fade-in + bar animation
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.classList.add('visible');
+          e.target.querySelectorAll('.score-bar-fill').forEach(bar => {
+            setTimeout(() => { bar.style.width = bar.dataset.width + '%'; }, 200);
+          });
+        }
+      });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
   </script>
 </body>
 </html>

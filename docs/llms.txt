@@ -15,15 +15,26 @@ brew install weave
 weave setup
 ```
 
+Or build from source:
+```
+git clone https://github.com/Ataraxy-Labs/weave
+cd weave && cargo install --path crates/weave-cli
+cargo install --path crates/weave-driver
+```
+
 ## Benchmark
 
-31 real-world merge scenarios across 7 languages:
+31 synthetic merge scenarios across 7 languages:
 - weave: 31/31 clean (100%)
 - mergiraf: 26/31 clean (83%)
 - git: 15/31 clean (48%)
 
-Full benchmark suite: 11ms. Individual merges: 65-374μs.
-Entity extraction via sem-core with xxHash64 structural hashing, parallel tree-sitter parsing, and LTO-optimized release builds.
+Real-world benchmarks (4,917 file merges from 5 major repos):
+- 83 wins (git conflicted, weave resolved cleanly)
+- 0 regressions on C, Python, Go
+- Repos tested: git/git (C), Flask (Python), CPython (C/Python), Go (Go), TypeScript (TS)
+
+Full benchmark suite: 11ms. Individual merges: 65-374us.
 
 ## How It Works
 
@@ -36,18 +47,18 @@ Entity extraction via sem-core with xxHash64 structural hashing, parallel tree-s
 
 ## Key Features
 
-- 14 languages: TypeScript, TSX, JavaScript, Python, Go, Rust, Java, C, C++, Ruby, C#, PHP, Swift, Fortran
+- 21 languages + 5 data formats (see full list below)
 - Rename detection via confidence-scored structural hashing (0.95/0.8/0.6 scoring)
-- Commutative import merge with group preservation (imports merged within blank-line groups)
+- Commutative import merge with group preservation
 - Unordered class members (methods added at same position resolve cleanly)
 - Inner entity merge (both modify same class, methods merged independently)
 - Comment/decorator bundling (decorators move with their function)
 - ConGra conflict taxonomy (Text/Syntax/Functional) with resolution hints
-- Multi-line signature detection (paren depth tracking for conflict classification)
+- Multi-line signature detection (paren depth tracking)
 - Cosmetic vs structural change detection
 - Post-merge semantic + parse validation
-- LRU entity cache in MCP server (500 entries, skips redundant tree-sitter parses)
-- Configurable: WEAVE_TIMEOUT (merge timeout), WEAVE_MAX_DUPLICATES (duplicate entity threshold)
+- LRU entity cache in MCP server (500 entries)
+- Configurable: WEAVE_TIMEOUT, WEAVE_MAX_DUPLICATES, WEAVE_REPO
 
 ## Architecture
 
@@ -75,6 +86,7 @@ Cargo workspace with 5 crates:
 - weave_impact_analysis: transitive blast radius via BFS
 - weave_diff: entity-level semantic diff between two refs
 - weave_merge_summary: parse conflict markers into structured JSON
+- weave_merge_audit: per-entity audit trail of merge resolutions
 
 ## MCP Setup
 
@@ -85,6 +97,44 @@ claude mcp add --scope user weave -- weave-mcp
 # Claude Desktop (~/.config/claude/claude_desktop_config.json)
 { "mcpServers": { "weave": { "command": "weave-mcp" } } }
 ```
+
+## Language Support
+
+21 programming languages:
+
+| Language | Extensions | Entity Types |
+|----------|-----------|--------------|
+| TypeScript | .ts .tsx | functions, classes, interfaces, types, enums, exports |
+| JavaScript | .js .jsx .mjs .cjs | functions, classes, variables, exports |
+| Python | .py | functions, classes, decorated definitions |
+| Go | .go | functions, methods, types, vars, consts |
+| Rust | .rs | functions, structs, enums, impls, traits, mods, consts |
+| Java | .java | classes, methods, interfaces, enums, fields, constructors |
+| C | .c .h | functions, structs, enums, unions, typedefs |
+| C++ | .cpp .cc .hpp | functions, classes, structs, enums, namespaces, templates |
+| C# | .cs | classes, methods, interfaces, enums, structs, properties |
+| Ruby | .rb | methods, classes, modules |
+| PHP | .php | functions, classes, methods, interfaces, traits, enums |
+| Swift | .swift | functions, classes, protocols, structs, enums, properties |
+| Elixir | .ex .exs | modules, functions, macros, guards, protocols |
+| Bash | .sh | functions |
+| HCL/Terraform | .hcl .tf .tfvars | blocks, attributes (qualified names) |
+| Kotlin | .kt .kts | classes, interfaces, objects, functions, properties |
+| Fortran | .f90 .f95 .f | functions, subroutines, modules, programs |
+| Vue | .vue | template/script/style blocks + inner TS/JS entities |
+| Svelte | .svelte .svelte.js .svelte.ts | component blocks, rune modules + inner JS/TS entities |
+| XML | .xml .plist .svg .csproj | elements (nested, tag-name identity) |
+| ERB | .erb | blocks, expressions, code tags |
+
+Plus structured data formats:
+
+| Format | Extensions | Entity Types |
+|--------|-----------|--------------|
+| JSON | .json | properties, objects (RFC 6901 paths) |
+| YAML | .yml .yaml | sections, properties (dot paths) |
+| TOML | .toml | sections, properties |
+| CSV | .csv .tsv | rows (first column as ID) |
+| Markdown | .md .mdx | heading-based sections |
 
 ## Git Integration
 
@@ -101,6 +151,7 @@ weave plugs into git as a merge driver. Works with merge, rebase, and cherry-pic
 ## Links
 
 - GitHub: https://github.com/Ataraxy-Labs/weave
+- Website: https://ataraxy-labs.github.io/weave
 - Homebrew: brew install weave
 - Entity extraction: https://github.com/Ataraxy-Labs/sem (sem-core)
 - License: MIT

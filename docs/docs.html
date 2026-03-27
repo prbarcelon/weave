@@ -11,12 +11,12 @@
     <nav>
       <a class="logo" href="index.html">weave</a>
       <div class="links">
-        <a href="index.html">Home</a>
         <a href="docs.html" class="active">Docs</a>
         <a href="learn.html">Learn</a>
         <a href="benchmarks.html">Benchmarks</a>
         <a href="changelog.html">Changelog</a>
         <a href="https://github.com/Ataraxy-Labs/weave">GitHub</a>
+        <a href="llms.txt">llms.txt</a>
       </div>
     </nav>
 
@@ -28,12 +28,90 @@
 
     <!-- TOC -->
     <div style="padding: 20px 0 0; font-size: 13px; color: var(--dim); display: flex; flex-wrap: wrap; gap: 16px;">
+      <a href="#getting-started">Getting Started</a>
       <a href="#how-it-works">How It Works</a>
       <a href="#architecture">Architecture</a>
       <a href="#crdt">CRDT State</a>
       <a href="#mcp">MCP Server</a>
       <a href="#commands">CLI Commands</a>
+      <a href="#languages">Languages</a>
     </div>
+
+    <!-- Getting Started -->
+    <section id="getting-started">
+      <h2>Getting started</h2>
+      <p class="section-desc">Get weave running in your repo in 30 seconds.</p>
+
+      <div class="terminal">
+        <div class="terminal-bar">
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <div class="terminal-title">~/my-project</div>
+        </div>
+        <div class="terminal-body">
+<pre><span class="d"># Install</span>
+<span class="cmd">$ cargo install --git https://github.com/Ataraxy-Labs/weave weave-cli</span>
+<span class="cmd">$ cargo install --git https://github.com/Ataraxy-Labs/weave weave-driver</span>
+
+<span class="d"># Configure your repo</span>
+<span class="cmd">$ cd my-project</span>
+<span class="cmd">$ weave setup</span>
+<span class="g">&#10003;</span> Created .gitattributes with weave merge driver rules
+<span class="g">&#10003;</span> Configured git merge driver 'weave'
+
+<span class="d"># Preview a merge before doing it</span>
+<span class="cmd">$ weave preview feature-branch</span>
+  src/auth.ts &mdash; <span class="g">auto-resolved</span>
+    2 entities matched, 2 modified, 0 conflicts
+  src/config.json &mdash; <span class="g">auto-resolved</span>
+    1 entity matched, 1 modified, 0 conflicts
+
+<span class="g">&#10003;</span> Merge would be clean (2 file(s) auto-resolved by weave)
+
+<span class="d"># Now git merge uses weave automatically</span>
+<span class="cmd">$ git merge feature-branch</span>
+<span class="g">Merge made by the 'ort' strategy.</span></pre>
+        </div>
+      </div>
+
+      <h3 style="font-size: 16px; color: var(--accent); margin: 32px 0 16px;">For AI agents (MCP)</h3>
+
+      <div class="terminal">
+        <div class="terminal-bar">
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <div class="terminal-title">Claude Code (CLI)</div>
+        </div>
+        <div class="terminal-body">
+<pre><span class="d"># Install the MCP server binary</span>
+<span class="cmd">$ cargo install --git https://github.com/Ataraxy-Labs/weave weave-mcp</span>
+
+<span class="d"># Add to Claude Code (available in all projects)</span>
+<span class="cmd">$ claude mcp add --scope user weave -- weave-mcp</span>
+
+<span class="d"># Restart Claude Code, then verify with /mcp</span></pre>
+        </div>
+      </div>
+
+      <div class="terminal">
+        <div class="terminal-bar">
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <div class="terminal-title">Claude Desktop</div>
+        </div>
+        <div class="terminal-body">
+<pre><span class="d"># Add to Claude Desktop config (~/.config/claude/claude_desktop_config.json)</span>
+<span class="d">{</span>
+  <span class="b">"mcpServers"</span>: <span class="d">{</span>
+    <span class="b">"weave"</span>: <span class="d">{</span> <span class="b">"command"</span>: <span class="g">"weave-mcp"</span> <span class="d">}</span>
+  <span class="d">}</span>
+<span class="d">}</span></pre>
+        </div>
+      </div>
+    </section>
 
     <!-- How It Works -->
     <section id="how-it-works">
@@ -454,6 +532,54 @@
             <td><em>auto-detected</em></td>
             <td>Override git repo root for the MCP server. Useful when running weave-mcp from outside a repository.</td>
           </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Supported Languages -->
+    <section id="languages">
+      <h2>Supported languages</h2>
+      <p class="section-desc">Entity extraction powered by <a href="https://github.com/Ataraxy-Labs/sem" style="color:var(--green)">sem-core</a> and tree-sitter. 21 programming languages + 5 data formats.</p>
+      <table>
+        <thead>
+          <tr><th>Language</th><th>Extensions</th><th>Entities</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>TypeScript</td><td>.ts .tsx</td><td>functions, classes, interfaces, types, enums, exports</td></tr>
+          <tr><td>JavaScript</td><td>.js .jsx .mjs .cjs</td><td>functions, classes, variables, exports</td></tr>
+          <tr><td>Python</td><td>.py</td><td>functions, classes, decorated definitions</td></tr>
+          <tr><td>Go</td><td>.go</td><td>functions, methods, types, vars, consts</td></tr>
+          <tr><td>Rust</td><td>.rs</td><td>functions, structs, enums, impls, traits, mods, consts</td></tr>
+          <tr><td>Java</td><td>.java</td><td>classes, methods, interfaces, enums, fields, constructors</td></tr>
+          <tr><td>C</td><td>.c .h</td><td>functions, structs, enums, unions, typedefs</td></tr>
+          <tr><td>C++</td><td>.cpp .cc .hpp</td><td>functions, classes, structs, enums, namespaces, templates</td></tr>
+          <tr><td>C#</td><td>.cs</td><td>classes, methods, interfaces, enums, structs, properties</td></tr>
+          <tr><td>Ruby</td><td>.rb</td><td>methods, classes, modules</td></tr>
+          <tr><td>PHP</td><td>.php</td><td>functions, classes, methods, interfaces, traits, enums</td></tr>
+          <tr><td>Swift</td><td>.swift</td><td>functions, classes, protocols, structs, enums, properties</td></tr>
+          <tr><td>Elixir</td><td>.ex .exs</td><td>modules, functions, macros, guards, protocols</td></tr>
+          <tr><td>Bash</td><td>.sh</td><td>functions</td></tr>
+          <tr><td>HCL/Terraform</td><td>.hcl .tf .tfvars</td><td>blocks, attributes (qualified names)</td></tr>
+          <tr><td>Kotlin</td><td>.kt .kts</td><td>classes, interfaces, objects, functions, properties</td></tr>
+          <tr><td>Fortran</td><td>.f90 .f95 .f</td><td>functions, subroutines, modules, programs</td></tr>
+          <tr><td>Vue</td><td>.vue</td><td>template/script/style blocks + inner TS/JS entities</td></tr>
+          <tr><td>Svelte</td><td>.svelte .svelte.js .svelte.ts</td><td>component blocks, rune modules + inner JS/TS entities</td></tr>
+          <tr><td>XML</td><td>.xml .plist .svg .csproj</td><td>elements (nested, tag-name identity)</td></tr>
+          <tr><td>ERB</td><td>.erb</td><td>blocks, expressions, code tags</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="font-size: 16px; color: var(--accent); margin: 32px 0 16px;">Data formats</h3>
+      <table>
+        <thead>
+          <tr><th>Format</th><th>Extensions</th><th>Entities</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>JSON</td><td>.json</td><td>properties, objects (RFC 6901 paths)</td></tr>
+          <tr><td>YAML</td><td>.yml .yaml</td><td>sections, properties (dot paths)</td></tr>
+          <tr><td>TOML</td><td>.toml</td><td>sections, properties</td></tr>
+          <tr><td>CSV</td><td>.csv .tsv</td><td>rows (first column as ID)</td></tr>
+          <tr><td>Markdown</td><td>.md .mdx</td><td>heading-based sections</td></tr>
         </tbody>
       </table>
     </section>
