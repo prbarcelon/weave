@@ -26,6 +26,9 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             cross: true
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            cross: true
 
     runs-on: ${{ matrix.os }}
 
@@ -53,7 +56,8 @@ jobs:
       - name: Build weave-driver
         run: cargo build --release --target ${{ matrix.target }} --bin weave-driver ${{ matrix.cross && '--features vendored-openssl' || '' }}
 
-      - name: Package binaries
+      - name: Package binaries (Unix)
+        if: runner.os != 'Windows'
         run: |
           mkdir -p dist
           cd target/${{ matrix.target }}/release
@@ -61,6 +65,15 @@ jobs:
           tar czf ../../../dist/weave-mcp-${{ matrix.target }}.tar.gz weave-mcp
           tar czf ../../../dist/weave-cli-${{ matrix.target }}.tar.gz weave
           tar czf ../../../dist/weave-driver-${{ matrix.target }}.tar.gz weave-driver
+
+      - name: Package binaries (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Compress-Archive -Path target/${{ matrix.target }}/release/weave-mcp.exe -DestinationPath dist/weave-mcp-${{ matrix.target }}.zip
+          Compress-Archive -Path target/${{ matrix.target }}/release/weave.exe -DestinationPath dist/weave-cli-${{ matrix.target }}.zip
+          Compress-Archive -Path target/${{ matrix.target }}/release/weave-driver.exe -DestinationPath dist/weave-driver-${{ matrix.target }}.zip
 
       - name: Upload artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
