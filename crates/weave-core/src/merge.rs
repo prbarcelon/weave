@@ -495,8 +495,8 @@ pub fn entity_merge_with_registry(
     // Post-merge cleanup: remove duplicate lines and normalize blank lines
     let content = post_merge_cleanup(&content);
 
-    // Post-merge parse validation: verify the merged result still parses correctly
-    // (MergeBot-inspired safety check — catch syntactically broken merges)
+    // Post-merge validation: verify the merged result is structurally sound.
+    // Catches silent data loss from entity merge / reconstruction bugs.
     let mut warnings = vec![];
     if conflicts.is_empty() && stats.entities_both_changed_merged > 0 {
         let merged_entities = plugin.extract_entities(&content, file_path);
@@ -508,6 +508,35 @@ pub fn entity_merge_with_registry(
                 kind: crate::validate::WarningKind::ParseFailedAfterMerge,
                 related: vec![],
             });
+        }
+
+        // Entity coverage check: every resolved-clean entity's content should
+        // appear in the merged output. If it doesn't, reconstruct dropped it.
+        if conflicts.is_empty() {
+            for (_, resolved) in &resolved_entities {
+                if let ResolvedEntity::Clean(region) = resolved {
+                    let trimmed = region.content.trim();
+                    if !trimmed.is_empty() && trimmed.len() > 20 && !content.contains(trimmed) {
+                        // Entity resolved cleanly but its content is missing from output.
+                        // Fall back to git merge-file to avoid silent data loss.
+                        return git_merge_file(base, ours, theirs, &mut stats);
+                    }
+                }
+            }
+        }
+
+        // Entity count check: re-parsed merged output should have at least as many
+        // entities as the minimum of ours/theirs (minus deletions). A significant
+        // drop means entities were silently lost.
+        if conflicts.is_empty() && !merged_entities.is_empty() {
+            let merged_top = filter_nested_entities(merged_entities);
+            let deleted_count = resolved_entities.values()
+                .filter(|r| matches!(r, ResolvedEntity::Deleted))
+                .count();
+            let expected_min = ours_entities.len().min(theirs_entities.len()).saturating_sub(deleted_count);
+            if expected_min > 3 && merged_top.len() < expected_min * 80 / 100 {
+                return git_merge_file(base, ours, theirs, &mut stats);
+            }
         }
     }
 
@@ -531,15 +560,28 @@ pub fn entity_merge_with_registry(
         }
     }
 
-    // Safety net: detect silent data loss from inner merge.
-    // If the merged result is significantly shorter than both inputs and has no
-    // conflict markers, the inner merge likely garbled content. Fall back to git.
+    // Safety net: detect silent data loss from entity merge.
+    // If the merged result is significantly shorter than expected, fall back to git.
     if entity_markers == 0 {
         let merged_len = entity_result.content.len();
+        let max_input_len = ours.len().max(theirs.len());
         let min_input_len = ours.len().min(theirs.len());
-        // If result is less than 80% of the shorter input, something went wrong
-        if min_input_len > 200 && merged_len < min_input_len * 80 / 100 {
+        // Expected length: at least 90% of the shorter input (both branches
+        // contribute content, so the merge should be at least as long as the
+        // shorter one minus some deletions).
+        if min_input_len > 200 && merged_len < min_input_len * 90 / 100 {
             return git_merge_file(base, ours, theirs, &mut stats);
+        }
+        // Also check: merged shouldn't be much shorter than max input unless
+        // there were intentional deletions from one branch
+        if max_input_len > 500 && merged_len < max_input_len * 70 / 100 {
+            // Check if the length reduction is explained by one branch deleting content
+            let base_len = base.len();
+            let ours_deleted = base_len > ours.len() && (base_len - ours.len()) > max_input_len * 20 / 100;
+            let theirs_deleted = base_len > theirs.len() && (base_len - theirs.len()) > max_input_len * 20 / 100;
+            if !ours_deleted && !theirs_deleted {
+                return git_merge_file(base, ours, theirs, &mut stats);
+            }
         }
     }
 
@@ -1374,6 +1416,21 @@ fn merge_imports_commutatively(base: &str, ours: &str, theirs: &str) -> String {
             groups[best_group].push(add);
         } else {
             groups.push(vec![add]);
+        }
+    }
+
+    // Sort import lines within each group alphabetically so new imports
+    // land in the conventional position rather than appended at the end.
+    for group in &mut groups {
+        // Only sort lines that are imports; keep non-import lines (comments) in place.
+        let import_indices: Vec<usize> = group.iter().enumerate()
+            .filter(|(_, l)| is_import_line(l))
+            .map(|(i, _)| i)
+            .collect();
+        let mut import_lines: Vec<&str> = import_indices.iter().map(|&i| group[i]).collect();
+        import_lines.sort_unstable();
+        for (j, &idx) in import_indices.iter().enumerate() {
+            group[idx] = import_lines[j];
         }
     }
 
