@@ -24,11 +24,9 @@
   <img src="https://img.shields.io/badge/languages-21-blue" alt="Languages">
 </p>
 
-Weave is a Git merge driver that works at the entity level instead of lines. It parses all three versions of a file (base, ours, theirs) with tree-sitter, extracts functions, classes, and methods as entities, and merges them structurally. Two agents adding different functions to the same file? Git calls that a conflict. Weave merges it cleanly.
-
-On our benchmark of 31 real-world merge scenarios, weave resolved all 31 cleanly. Git managed 15. The difference: weave knows that two changes to different functions in the same file aren't a conflict, even if the line ranges overlap.
-
-Weave installs as a Git merge driver with one command. After that, every `git merge`, `git rebase`, and `git cherry-pick` uses entity-level merging automatically. It also includes an MCP server with 15 tools for agent coordination: claim entities before editing, detect conflicts early, preview merges before committing.
+<p align="center">
+  <img src="assets/merge-animation.gif" alt="Weave merge animation: two branches add different functions, git conflicts, weave merges cleanly" width="700" />
+</p>
 
 ## The Problem
 

@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weave Merge Animation</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0d1117;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    overflow: hidden;
+  }
+
+  .stage {
+    width: 800px;
+    height: 420px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .el {
+    position: absolute;
+    opacity: 0;
+    transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Code blocks */
+  .code {
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    white-space: pre;
+  }
+
+  .code-gray {
+    background: #161b22;
+    border: 1px solid #30363d;
+    color: #8b949e;
+  }
+
+  .code-green {
+    background: #0d2818;
+    border: 1px solid #238636;
+    color: #7ee787;
+  }
+
+  .code-blue {
+    background: #0c2d6b;
+    border: 1px solid #388bfd;
+    color: #79c0ff;
+  }
+
+  .code-red {
+    background: rgba(248, 81, 73, 0.06);
+    border: 2px solid #f85149;
+    color: #f85149;
+    font-size: 11.5px;
+  }
+
+  /* Labels */
+  .pill {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 12px;
+  }
+
+  .pill-gray { background: #30363d; color: #8b949e; }
+  .pill-green { background: #238636; color: #fff; }
+  .pill-blue { background: #388bfd; color: #fff; }
+
+  /* Entity tags */
+  .tag {
+    font-size: 9.5px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  .tag-gray { background: #484f58; color: #c9d1d9; }
+  .tag-green { background: #238636; color: #fff; }
+  .tag-blue { background: #388bfd; color: #fff; }
+
+  /* Dashed entity outlines */
+  .outline {
+    border: 1.5px dashed;
+    border-radius: 5px;
+  }
+
+  .outline-gray { border-color: #484f58; }
+  .outline-green { border-color: #238636; }
+  .outline-blue { border-color: #388bfd; }
+
+  /* Text elements */
+  .heading {
+    font-size: 13px;
+    font-weight: 600;
+    color: #8b949e;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    text-align: center;
+  }
+
+  .tool-name {
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .tool-git { color: #f85149; }
+  .tool-weave { color: #7ee787; }
+
+  .status {
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .status-bad { color: #f85149; }
+  .status-good { color: #7ee787; }
+
+  .subtitle {
+    font-size: 12.5px;
+    color: #c9d1d9;
+    text-align: center;
+  }
+
+  .badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 12px;
+    background: #238636;
+    color: #fff;
+  }
+
+  /* SVG connector lines */
+  .lines {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }
+
+  .lines path {
+    fill: none;
+    stroke: #30363d;
+    stroke-width: 1.5;
+    stroke-dasharray: 300;
+    stroke-dashoffset: 300;
+    transition: stroke-dashoffset 0.7s ease;
+  }
+
+  .lines path.on { stroke-dashoffset: 0; }
+
+  /* Red flash */
+  .flash {
+    position: absolute;
+    inset: 0;
+    background: rgba(248, 81, 73, 0.12);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+  }
+
+  /* Animations */
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-3px); }
+    75% { transform: translateX(3px); }
+  }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.04); }
+  }
+
+  /* Progress dots */
+  .dots {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 6px;
+  }
+
+  .dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #21262d;
+    transition: background 0.3s;
+  }
+
+  .dot.on { background: #484f58; }
+</style>
+</head>
+<body>
+
+<div class="stage" id="s">
+  <svg class="lines">
+    <path id="forkL" d="M 400,105 C 400,145 185,145 185,185"/>
+    <path id="forkR" d="M 400,105 C 400,145 615,145 615,185"/>
+  </svg>
+  <div class="flash" id="flash"></div>
+  <div class="dots">
+    <div class="dot" id="d0"></div>
+    <div class="dot" id="d1"></div>
+    <div class="dot" id="d2"></div>
+    <div class="dot" id="d3"></div>
+  </div>
+</div>
+
+<script>
+const S = document.getElementById('s');
+const EX = 'function existing() {\n  return "hello";\n}';
+const VT = 'function validateToken(t) {\n  return t.startsWith("sk-");\n}';
+const FD = 'function formatDate(d) {\n  return d.toISOString();\n}';
+const CM = '<<<<<<< HEAD\nfunction validateToken(t) {\n  return t.startsWith("sk-");\n}\n=======\nfunction formatDate(d) {\n  return d.toISOString();\n}\n>>>>>>> feature-b';
+
+let els = [];
+let timers = [];
+
+function mk(cls, txt, css) {
+  const d = document.createElement('div');
+  d.className = 'el ' + cls;
+  if (txt) d.textContent = txt;
+  Object.assign(d.style, css || {});
+  S.appendChild(d);
+  els.push(d);
+  return d;
+}
+
+function at(ms, fn) { timers.push(setTimeout(fn, ms)); }
+
+function dot(n) {
+  for (let i = 0; i < 4; i++)
+    document.getElementById('d' + i).className = 'dot' + (i === n ? ' on' : '');
+}
+
+function flashRed() {
+  const f = document.getElementById('flash');
+  f.style.opacity = '1';
+  setTimeout(() => f.style.opacity = '0', 200);
+}
+
+function clear() {
+  timers.forEach(clearTimeout);
+  timers = [];
+  els.forEach(e => e.remove());
+  els = [];
+  document.querySelectorAll('.lines path').forEach(p => p.classList.remove('on'));
+  document.getElementById('flash').style.opacity = '0';
+}
+
+function run() {
+  clear();
+  let t = 0;
+
+  // ── Scene 1: Base file ──────────────────────────
+  dot(0);
+
+  const title1 = mk('heading', 'THE BASE FILE', { top: '14px', left: '0', width: '800px' });
+  at(100, () => title1.style.opacity = '1');
+
+  const baseBlock = mk('code code-gray', EX, { top: '70px', left: '305px', width: '210px' });
+  at(300, () => baseBlock.style.opacity = '1');
+
+  const mainPill = mk('pill pill-gray', 'main', { top: '50px', left: '375px' });
+  at(400, () => mainPill.style.opacity = '1');
+
+  t += 2200;
+
+  // ── Scene 2: Fork into two branches ─────────────
+  at(t, () => {
+    dot(1);
+    title1.textContent = 'TWO BRANCHES DIVERGE';
+
+    // Slide base up, fade pill
+    baseBlock.style.top = '45px';
+    mainPill.style.opacity = '0';
+
+    // Draw fork lines
+    setTimeout(() => {
+      document.getElementById('forkL').classList.add('on');
+      document.getElementById('forkR').classList.add('on');
+    }, 150);
+  });
+
+  // Branch A (left)
+  const lblA = mk('pill pill-green', 'branch-a', { top: '188px', left: '128px' });
+  at(t + 350, () => lblA.style.opacity = '1');
+
+  const exA = mk('code code-gray', EX, { top: '212px', left: '75px', width: '210px' });
+  at(t + 450, () => exA.style.opacity = '1');
+
+  const valA = mk('code code-green', VT, { top: '272px', left: '75px', width: '210px' });
+  at(t + 650, () => valA.style.opacity = '1');
+
+  // Branch B (right)
+  const lblB = mk('pill pill-blue', 'branch-b', { top: '188px', left: '558px' });
+  at(t + 350, () => lblB.style.opacity = '1');
+
+  const exB = mk('code code-gray', EX, { top: '212px', left: '525px', width: '210px' });
+  at(t + 450, () => exB.style.opacity = '1');
+
+  const fmtB = mk('code code-blue', FD, { top: '272px', left: '525px', width: '210px' });
+  at(t + 650, () => fmtB.style.opacity = '1');
+
+  t += 2800;
+
+  // ── Scene 3: Git merge = CONFLICT ───────────────
+  at(t, () => {
+    dot(2);
+
+    // Hide scene 2 elements
+    [baseBlock, mainPill, lblA, exA, valA, lblB, exB, fmtB].forEach(e => e.style.opacity = '0');
+    document.getElementById('forkL').classList.remove('on');
+    document.getElementById('forkR').classList.remove('on');
+
+    title1.textContent = 'GIT MERGE';
+    title1.style.color = '#f85149';
+  });
+
+  // Show conflict markers
+  const conflictBox = mk('code code-red', CM, { top: '80px', left: '225px', width: '360px' });
+  at(t + 400, () => {
+    conflictBox.style.opacity = '1';
+  });
+
+  at(t + 700, () => {
+    flashRed();
+    conflictBox.style.animation = 'shake 0.3s ease';
+    setTimeout(() => conflictBox.style.animation = '', 300);
+  });
+
+  // Explanation text
+  const gitExplain = mk('subtitle', 'Both branches add to the same line range.', {
+    top: '290px', left: '0', width: '800px', color: '#8b949e', fontSize: '12px'
+  });
+  at(t + 900, () => gitExplain.style.opacity = '1');
+
+  // CONFLICT status
+  const conflictIcon = mk('status status-bad', '\u2718  CONFLICT', {
+    top: '320px', left: '0', width: '800px', textAlign: 'center'
+  });
+  at(t + 1000, () => conflictIcon.style.opacity = '1');
+
+  t += 3200;
+
+  // ── Scene 4: Weave merge = Clean ────────────────
+  at(t, () => {
+    dot(3);
+
+    // Hide git scene
+    [conflictBox, gitExplain, conflictIcon].forEach(e => e.style.opacity = '0');
+    title1.textContent = 'WEAVE MERGE';
+    title1.style.color = '#7ee787';
+  });
+
+  // Left branch entities
+  const wExA = mk('code code-gray', EX, { top: '68px', left: '55px', width: '210px' });
+  const wValA = mk('code code-green', VT, { top: '128px', left: '55px', width: '210px' });
+
+  // Right branch entities
+  const wExB = mk('code code-gray', EX, { top: '68px', left: '545px', width: '210px' });
+  const wFmtB = mk('code code-blue', FD, { top: '128px', left: '545px', width: '210px' });
+
+  at(t + 200, () => { wExA.style.opacity = '1'; wExB.style.opacity = '1'; });
+  at(t + 350, () => { wValA.style.opacity = '1'; wFmtB.style.opacity = '1'; });
+
+  // Dashed entity outlines
+  const olA1 = mk('outline outline-gray', '', { top: '64px', left: '51px', width: '218px', height: '50px' });
+  const olA2 = mk('outline outline-green', '', { top: '124px', left: '51px', width: '218px', height: '50px' });
+  const olB1 = mk('outline outline-gray', '', { top: '64px', left: '541px', width: '218px', height: '50px' });
+  const olB2 = mk('outline outline-blue', '', { top: '124px', left: '541px', width: '218px', height: '50px' });
+
+  at(t + 500, () => { olA1.style.opacity = '1'; olB1.style.opacity = '1'; });
+  at(t + 600, () => { olA2.style.opacity = '1'; olB2.style.opacity = '1'; });
+
+  // Entity tags
+  const tA1 = mk('tag tag-gray', 'existing', { top: '56px', left: '61px' });
+  const tA2 = mk('tag tag-green', 'validateToken', { top: '116px', left: '61px' });
+  const tB1 = mk('tag tag-gray', 'existing', { top: '56px', left: '551px' });
+  const tB2 = mk('tag tag-blue', 'formatDate', { top: '116px', left: '551px' });
+
+  at(t + 700, () => { tA1.style.opacity = '1'; tB1.style.opacity = '1'; });
+  at(t + 800, () => { tA2.style.opacity = '1'; tB2.style.opacity = '1'; });
+
+  // "Entities are independent" label
+  const indepLabel = mk('subtitle', 'Different entities. No conflict.', {
+    top: '192px', left: '0', width: '800px', color: '#8b949e', fontSize: '12px'
+  });
+  at(t + 900, () => indepLabel.style.opacity = '1');
+
+  // Arrow down to merged result
+  const arrow = mk('subtitle', '\u2193', {
+    top: '212px', left: '0', width: '800px', color: '#30363d', fontSize: '18px'
+  });
+  at(t + 1000, () => arrow.style.opacity = '1');
+
+  // Merged result (center, stacked)
+  const rEx = mk('code code-gray', EX, { top: '240px', left: '290px', width: '230px' });
+  const rVal = mk('code code-green', VT, { top: '300px', left: '290px', width: '230px' });
+  const rFmt = mk('code code-blue', FD, { top: '360px', left: '290px', width: '230px' });
+
+  at(t + 1200, () => rEx.style.opacity = '1');
+  at(t + 1400, () => rVal.style.opacity = '1');
+  at(t + 1600, () => rFmt.style.opacity = '1');
+
+  // Fade side entities
+  at(t + 1100, () => {
+    [wExA, wValA, wExB, wFmtB, olA1, olA2, olB1, olB2, tA1, tA2, tB1, tB2].forEach(e => {
+      e.style.opacity = '0.15';
+    });
+  });
+
+  // Clean merge status
+  const cleanIcon = mk('status status-good', '\u2714  CLEAN MERGE', {
+    top: '395px', left: '0', width: '800px', textAlign: 'center', fontSize: '14px'
+  });
+  at(t + 1800, () => cleanIcon.style.opacity = '1');
+
+  t += 4000;
+
+  // Hold on result, then loop
+  at(t, () => {
+    // Fade to black before restart
+    [title1, wExA, wValA, wExB, wFmtB, olA1, olA2, olB1, olB2,
+     tA1, tA2, tB1, tB2, indepLabel, arrow, rEx, rVal, rFmt, cleanIcon].forEach(e => {
+      e.style.opacity = '0';
+    });
+  });
+
+  t += 1200;
+  at(t, run);
+}
+
+run();
+</script>
+</body>
+</html>
