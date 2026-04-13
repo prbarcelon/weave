@@ -590,6 +590,27 @@ fn empty_base_both_add_different_content() {
 }
 
 #[test]
+fn empty_base_json_both_add_different_keys() {
+    // Regression test for https://github.com/Ataraxy-Labs/weave/issues/51
+    // Empty base + both sides add different JSON keys should produce
+    // conflict markers (exit 1), not silently invalid JSON (exit 0).
+    let base = "";
+    let ours = "{\n  \"a\": \"1\"\n}\n";
+    let theirs = "{\n  \"b\": \"2\"\n}\n";
+
+    let result = entity_merge(base, ours, theirs, "config.json");
+    assert!(
+        !result.is_clean(),
+        "Empty base with different JSON content should conflict, not produce invalid output"
+    );
+    // The merged output must not contain content after the closing brace
+    assert!(
+        !result.content.contains("}\n\""),
+        "Must not append content after closing brace: {}", result.content
+    );
+}
+
+#[test]
 fn both_make_identical_changes() {
     let base = r#"export function shared() {
     return "old";

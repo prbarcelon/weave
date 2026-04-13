@@ -256,6 +256,13 @@ pub fn entity_merge_with_registry(
     if base_entities.is_empty() && !base.trim().is_empty() {
         return line_level_fallback(base, ours, theirs, file_path);
     }
+    // When base is empty (file newly added in both branches), entity-level
+    // reconstruction can produce invalid output for structured formats like JSON
+    // (e.g. content appended after closing delimiter). Fall back to line-level
+    // merge which handles this case correctly.
+    if base.trim().is_empty() && !ours.trim().is_empty() && !theirs.trim().is_empty() {
+        return line_level_fallback(base, ours, theirs, file_path);
+    }
     // Allow empty entities if content is actually empty
     if ours_entities.is_empty() && !ours.trim().is_empty() && theirs_entities.is_empty() && !theirs.trim().is_empty() {
         return line_level_fallback(base, ours, theirs, file_path);
