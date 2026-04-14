@@ -1738,6 +1738,125 @@ fn ts_function_conflict_narrowed_to_changed_lines() {
     );
 }
 
+// =============================================================================
+// Scala
+// =============================================================================
+
+#[test]
+fn scala_two_agents_add_different_methods() {
+    let base = r#"class UserService {
+  def findById(id: String): Option[User] = db.find(id)
+}
+"#;
+    let ours = r#"class UserService {
+  def findById(id: String): Option[User] = db.find(id)
+
+  def create(user: User): User = db.save(user)
+}
+"#;
+    let theirs = r#"class UserService {
+  def findById(id: String): Option[User] = db.find(id)
+
+  def delete(id: String): Unit = db.remove(id)
+}
+"#;
+
+    let result = entity_merge(base, ours, theirs, "UserService.scala");
+    assert!(
+        result.is_clean(),
+        "Two agents adding different methods should auto-resolve. Conflicts: {:?}",
+        result.conflicts
+    );
+    assert!(result.content.contains("create"));
+    assert!(result.content.contains("delete"));
+    assert!(result.content.contains("findById"));
+}
+
+#[test]
+fn scala_one_modifies_one_adds() {
+    // Top-level definitions (Scala 3 style) — one side modifies, other adds
+    let base = r#"package com.example
+
+def greet(name: String): String = s"Hello, $name"
+"#;
+    let ours = r#"package com.example
+
+def greet(name: String): String = s"Hello, $name!"
+"#;
+    let theirs = r#"package com.example
+
+def greet(name: String): String = s"Hello, $name"
+
+def farewell(name: String): String = s"Goodbye, $name"
+"#;
+
+    let result = entity_merge(base, ours, theirs, "greetings.scala");
+    assert!(
+        result.is_clean(),
+        "One modifying, one adding should auto-resolve. Conflicts: {:?}",
+        result.conflicts
+    );
+    assert!(result.content.contains("Hello, $name!"));
+    assert!(result.content.contains("farewell"));
+}
+
+#[test]
+fn scala_both_modify_same_method_incompatibly() {
+    // Top-level definition (Scala 3 style) — both modify incompatibly
+    let base = r#"package com.example
+
+def process(data: String): String = data.trim()
+"#;
+    let ours = r#"package com.example
+
+def process(data: String): String = data.trim().toUpperCase()
+"#;
+    let theirs = r#"package com.example
+
+def process(data: String): String = data.trim().toLowerCase()
+"#;
+
+    let result = entity_merge(base, ours, theirs, "processor.scala");
+    assert!(!result.is_clean());
+    assert_eq!(result.conflicts.len(), 1);
+    assert_eq!(result.conflicts[0].entity_name, "process");
+}
+
+#[test]
+fn scala_add_different_top_level_definitions() {
+    let base = r#"package com.example
+
+trait Repository[T] {
+  def findAll(): List[T]
+}
+"#;
+    let ours = r#"package com.example
+
+trait Repository[T] {
+  def findAll(): List[T]
+}
+
+case class User(id: String, name: String)
+"#;
+    let theirs = r#"package com.example
+
+trait Repository[T] {
+  def findAll(): List[T]
+}
+
+case class Product(id: String, price: Double)
+"#;
+
+    let result = entity_merge(base, ours, theirs, "models.scala");
+    assert!(
+        result.is_clean(),
+        "Adding different top-level case classes should auto-resolve. Conflicts: {:?}",
+        result.conflicts
+    );
+    assert!(result.content.contains("User"));
+    assert!(result.content.contains("Product"));
+}
+
 /// Check if a needle appears only inside conflict marker blocks
 fn is_inside_conflict_markers(content: &str, needle: &str) -> bool {
     let mut in_conflict = false;
