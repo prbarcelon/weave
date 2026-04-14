@@ -8,3 +8,6 @@ members = [
     "crates/weave-github",
 ]
 resolver = "2"
+
+[patch.crates-io]
+sem-core = { path = "../sem/crates/sem-core" }
