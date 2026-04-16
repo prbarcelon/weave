@@ -15,7 +15,7 @@ use sem_core::parser::registry::ParserRegistry;
 /// Avoids recreating 11 tree-sitter language parsers per merge call.
 static PARSER_REGISTRY: LazyLock<ParserRegistry> = LazyLock::new(create_default_registry);
 
-use crate::conflict::{classify_conflict, ConflictKind, EntityConflict, MarkerFormat, MergeStats};
+use crate::conflict::{classify_conflict, ConflictComplexity, ConflictKind, EntityConflict, MarkerFormat, MergeStats};
 use crate::region::{extract_regions, EntityRegion, FileRegion};
 use crate::validate::SemanticWarning;
 use crate::reconstruct::reconstruct;
@@ -35,6 +35,7 @@ pub enum ResolutionStrategy {
     ConflictModifyDelete,
     ConflictBothAdded,
     ConflictRenameRename,
+    ConflictRenameModify,
     AddedOurs,
     AddedTheirs,
     Deleted,
@@ -488,6 +489,10 @@ pub fn entity_merge_with_registry(
     stats.entities_conflicted += interstitial_conflicts.len();
     conflicts.extend(interstitial_conflicts);
 
+    // Collect base IDs that were renamed in ours — these should not be treated
+    // as "theirs-only additions" during reconstruction.
+    let theirs_rename_base_ids: HashSet<String> = base_to_ours_rename.keys().cloned().collect();
+
     // Reconstruct the file
     let content = reconstruct(
         &ours_regions,
@@ -497,6 +502,7 @@ pub fn entity_merge_with_registry(
         &resolved_entities,
         &merged_interstitials,
         marker_format,
+        &theirs_rename_base_ids,
     );
 
     // Post-merge cleanup: remove duplicate lines and normalize blank lines
@@ -678,6 +684,33 @@ fn resolve_entity(
                             } else {
                                 (base_rc.clone(), ours_rc.clone(), theirs_rc.clone(), None)
                             };
+
+                        // Rename + modify: if one side renamed and the other modified
+                        // the body, conflict. The modifying developer didn't know about
+                        // the rename, so the merge needs human/agent review.
+                        if (ours_renamed && !theirs_renamed) || (!ours_renamed && theirs_renamed) {
+                            let renamed_in_ours = ours_renamed;
+                            let (old_name, new_name) = if renamed_in_ours {
+                                (base.name.clone(), ours.name.clone())
+                            } else {
+                                (base.name.clone(), theirs.name.clone())
+                            };
+                            stats.entities_conflicted += 1;
+                            let conflict = EntityConflict {
+                                entity_name: base.name.clone(),
+                                entity_type: base.entity_type.clone(),
+                                kind: ConflictKind::RenameModify {
+                                    old_name,
+                                    new_name,
+                                    renamed_in_ours,
+                                },
+                                complexity: ConflictComplexity::SyntaxFunctional,
+                                ours_content: Some(ours_rc),
+                                theirs_content: Some(theirs_rc),
+                                base_content: Some(base_rc),
+                            };
+                            return (ResolvedEntity::Conflict(conflict), ResolutionStrategy::ConflictRenameModify);
+                        }
 
                         // Whitespace-aware shortcut: if one side only changed
                         // whitespace/formatting, take the other side's content changes.
@@ -4545,20 +4578,15 @@ export function bar() {
 });
 "#;
         let result = entity_merge(base, ours, theirs, "cubeQueryTool.ts");
+        // Rename + modify should conflict (developer who modified didn't know about rename)
+        assert_eq!(result.conflicts.len(), 1, "Should have exactly one conflict");
         assert!(
-            result.is_clean(),
-            "Rename + modify should auto-resolve, got conflicts: {:?}",
-            result.conflicts
+            matches!(result.conflicts[0].kind, ConflictKind::RenameModify { renamed_in_ours: true, .. }),
+            "Should be a RenameModify conflict, got: {:?}",
+            result.conflicts[0].kind
         );
-        // Should use the new name from ours
-        assert!(
-            result.content.contains("cubeQueryTool"),
-            "Should contain the renamed entity name"
-        );
-        // Should contain the modifications from theirs
-        assert!(
-            result.content.contains("unit inference"),
-            "Should contain theirs' modifications"
-        );
+        // Both versions should be present in the conflict
+        assert!(result.content.contains("cubeQueryTool"), "Ours (renamed) should be in conflict markers");
+        assert!(result.content.contains("unit inference"), "Theirs (modified) should be in conflict markers");
     }
 }

@@ -18,16 +18,20 @@ pub fn reconstruct(
     resolved_entities: &HashMap<String, ResolvedEntity>,
     merged_interstitials: &HashMap<String, String>,
     marker_format: &MarkerFormat,
+    theirs_rename_base_ids: &std::collections::HashSet<String>,
 ) -> String {
     let mut output = String::new();
 
     // Track which entity IDs we've emitted (from ours skeleton)
     let mut emitted_entities: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    // Identify theirs-only entities (not in ours)
+    // Identify theirs-only entities (not in ours, and not renamed versions of ours entities)
     let theirs_only: Vec<&SemanticEntity> = theirs_entities
         .iter()
-        .filter(|e| !ours_entity_map.contains_key(e.id.as_str()))
+        .filter(|e| {
+            !ours_entity_map.contains_key(e.id.as_str())
+                && !theirs_rename_base_ids.contains(&e.id)
+        })
         .collect();
 
     // Build a map of theirs-only entities by what precedes them in theirs ordering

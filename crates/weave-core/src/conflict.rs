@@ -40,6 +40,12 @@ pub enum ConflictKind {
         ours_name: String,
         theirs_name: String,
     },
+    /// One branch renamed the entity, the other modified it.
+    RenameModify {
+        old_name: String,
+        new_name: String,
+        renamed_in_ours: bool,
+    },
 }
 
 impl fmt::Display for ConflictKind {
@@ -55,6 +61,12 @@ impl fmt::Display for ConflictKind {
             ConflictKind::BothAdded => write!(f, "both added"),
             ConflictKind::RenameRename { base_name, ours_name, theirs_name } => {
                 write!(f, "both renamed: '{}' → ours '{}', theirs '{}'", base_name, ours_name, theirs_name)
+            }
+            ConflictKind::RenameModify { old_name, new_name, renamed_in_ours: true } => {
+                write!(f, "renamed in ours ('{}' → '{}'), modified in theirs", old_name, new_name)
+            }
+            ConflictKind::RenameModify { old_name, new_name, renamed_in_ours: false } => {
+                write!(f, "modified in ours, renamed in theirs ('{}' → '{}')", old_name, new_name)
             }
         }
     }
@@ -355,7 +367,15 @@ impl EntityConflict {
                 "{} `{}` ({}, confidence: {})",
                 self.entity_type, self.entity_name, self.complexity, confidence
             );
-            let hint = self.complexity.resolution_hint();
+            let hint = match &self.kind {
+                ConflictKind::RenameModify { old_name, new_name, renamed_in_ours: true } => {
+                    format!("Renamed in ours ('{}' -> '{}'). Theirs modified the body. Take the new name and apply theirs' changes.", old_name, new_name)
+                }
+                ConflictKind::RenameModify { old_name, new_name, renamed_in_ours: false } => {
+                    format!("Renamed in theirs ('{}' -> '{}'). Ours modified the body. Take the new name and apply ours' changes.", old_name, new_name)
+                }
+                _ => self.complexity.resolution_hint().to_string(),
+            };
             out.push_str(&format!("{} ours \u{2014} {}\n", open, label));
             out.push_str(&format!("// hint: {}\n", hint));
         } else {
