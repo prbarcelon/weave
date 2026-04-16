@@ -659,6 +659,26 @@ fn resolve_entity(
                         let ours_rc = region_content(ours, ours_region_content);
                         let theirs_rc = region_content(theirs, theirs_region_content);
 
+                        // Rename-aware merge: when one side renamed an entity and the
+                        // other modified it, normalize names before 3-way merge so diffy
+                        // only sees the structural changes, not name conflicts.
+                        let ours_renamed = base.name != ours.name;
+                        let theirs_renamed = base.name != theirs.name;
+                        let (merge_base_rc, merge_ours_rc, merge_theirs_rc, _final_name) =
+                            if ours_renamed && !theirs_renamed {
+                                // Ours renamed: normalize base+theirs to use ours' name
+                                let nb = replace_at_word_boundaries(&base_rc, &base.name, &ours.name);
+                                let nt = replace_at_word_boundaries(&theirs_rc, &theirs.name, &ours.name);
+                                (nb, ours_rc.clone(), nt, Some(&ours.name))
+                            } else if theirs_renamed && !ours_renamed {
+                                // Theirs renamed: normalize base+ours to use theirs' name
+                                let nb = replace_at_word_boundaries(&base_rc, &base.name, &theirs.name);
+                                let no = replace_at_word_boundaries(&ours_rc, &ours.name, &theirs.name);
+                                (nb, no, theirs_rc.clone(), Some(&theirs.name))
+                            } else {
+                                (base_rc.clone(), ours_rc.clone(), theirs_rc.clone(), None)
+                            };
+
                         // Whitespace-aware shortcut: if one side only changed
                         // whitespace/formatting, take the other side's content changes.
                         // This handles the common case where one agent reformats while
@@ -672,17 +692,20 @@ fn resolve_entity(
                             return (ResolvedEntity::Clean(entity_to_region_with_content(ours, &ours_rc)), ResolutionStrategy::OursOnly);
                         }
 
-                        match diffy_merge(&base_rc, &ours_rc, &theirs_rc) {
+                        // Pick the renamed entity for output (prefer the side that did the rename)
+                        let output_entity = if ours_renamed { ours } else if theirs_renamed { theirs } else { ours };
+
+                        match diffy_merge(&merge_base_rc, &merge_ours_rc, &merge_theirs_rc) {
                             Some(merged) => {
                                 stats.entities_both_changed_merged += 1;
                                 stats.resolved_via_diffy += 1;
                                 (ResolvedEntity::Clean(EntityRegion {
-                                    entity_id: ours.id.clone(),
-                                    entity_name: ours.name.clone(),
-                                    entity_type: ours.entity_type.clone(),
+                                    entity_id: output_entity.id.clone(),
+                                    entity_name: output_entity.name.clone(),
+                                    entity_type: output_entity.entity_type.clone(),
                                     content: merged,
-                                    start_line: ours.start_line,
-                                    end_line: ours.end_line,
+                                    start_line: output_entity.start_line,
+                                    end_line: output_entity.end_line,
                                 }), ResolutionStrategy::DiffyMerged)
                             }
                             None => {
@@ -1105,8 +1128,19 @@ fn merge_interstitials(
         } else if base_content == theirs_content {
             merged.insert(key.to_string(), ours_content.to_string());
         } else {
-            // Both changed — check if this is an import-heavy region
-            if is_import_region(base_content)
+            // Both changed — check whitespace-only first
+            if is_whitespace_only_diff(base_content, ours_content)
+                && is_whitespace_only_diff(base_content, theirs_content)
+            {
+                // Both sides only changed whitespace, take theirs (arbitrary)
+                merged.insert(key.to_string(), theirs_content.to_string());
+            } else if is_whitespace_only_diff(base_content, ours_content) {
+                // Ours is whitespace-only, theirs has real changes
+                merged.insert(key.to_string(), theirs_content.to_string());
+            } else if is_whitespace_only_diff(base_content, theirs_content) {
+                // Theirs is whitespace-only, ours has real changes
+                merged.insert(key.to_string(), ours_content.to_string());
+            } else if is_import_region(base_content)
                 || is_import_region(ours_content)
                 || is_import_region(theirs_content)
             {
@@ -1927,6 +1961,19 @@ fn get_child_entities<'a>(
 /// name replaced at word boundaries by a placeholder, so entities with identical
 /// bodies but different names produce the same hash.
 ///
+/// Compute Jaccard similarity on whitespace-split tokens of two strings.
+/// Returns a value in [0.0, 1.0] where 1.0 means identical token sets.
+fn token_jaccard(a: &str, b: &str) -> f64 {
+    let tokens_a: HashSet<&str> = a.split_whitespace().collect();
+    let tokens_b: HashSet<&str> = b.split_whitespace().collect();
+    if tokens_a.is_empty() && tokens_b.is_empty() {
+        return 1.0;
+    }
+    let intersection = tokens_a.intersection(&tokens_b).count();
+    let union = tokens_a.union(&tokens_b).count();
+    if union == 0 { 1.0 } else { intersection as f64 / union as f64 }
+}
+
 /// Uses word-boundary matching to avoid partial replacements (e.g. replacing
 /// "get" inside "getAll"). Works across all languages since it operates on
 /// the content string, not language-specific AST features.
@@ -2050,6 +2097,31 @@ fn build_rename_map(
                         continue;
                     }
                     candidates.push(RenameCandidate { branch: branch_entity, base: base_entity, confidence: 0.6 });
+                }
+            }
+        }
+
+        // Token similarity fallback: catches renames where internal references were also updated
+        // (e.g. IDE "rename symbol" changes the name everywhere in the body).
+        // Only check same-file, same-type entities not already matched above.
+        let has_candidate = candidates.iter().any(|c| c.branch.id == branch_entity.id);
+        if !has_candidate {
+            for base_entity in base_entities {
+                if base_entity.entity_type != branch_entity.entity_type {
+                    continue;
+                }
+                if base_entity.file_path != branch_entity.file_path {
+                    continue;
+                }
+                // Skip if base entity still exists in branch (not actually deleted/renamed)
+                if branch_entities.iter().any(|e| e.id == base_entity.id) {
+                    continue;
+                }
+                let similarity = token_jaccard(&base_entity.content, &branch_entity.content);
+                if similarity >= 0.7 {
+                    let same_parent = base_entity.parent_id == branch_entity.parent_id;
+                    let confidence = if same_parent { 0.75 } else { 0.65 };
+                    candidates.push(RenameCandidate { branch: branch_entity, base: base_entity, confidence });
                 }
             }
         }
@@ -4436,5 +4508,57 @@ export function bar() {
         assert!(result.content.contains("import {"), "import {{ must not be dropped");
         assert!(result.content.contains("type d,"), "ours addition must be present");
         assert!(result.content.contains("} from \"./foo\""), "closing must be present");
+    }
+
+    #[test]
+    fn test_rename_plus_modify_auto_resolves() {
+        // Issue #53: ours renames a variable (IDE rename symbol), theirs modifies it.
+        // Should detect the rename via token similarity and merge cleanly.
+        let base = r#"export const cubeQueryExecutorTool = tool({
+    name: "cubeQueryExecutorTool",
+    description: "Execute a cube query",
+    schema: z.object({ query: z.string() }),
+    execute: async (input) => {
+        return await runQuery(input.query);
+    },
+});
+"#;
+        // Ours: renamed cubeQueryExecutorTool → cubeQueryTool (all refs updated)
+        let ours = r#"export const cubeQueryTool = tool({
+    name: "cubeQueryTool",
+    description: "Execute a cube query",
+    schema: z.object({ query: z.string() }),
+    execute: async (input) => {
+        return await runQuery(input.query);
+    },
+});
+"#;
+        // Theirs: modified the body (added unit inference logic)
+        let theirs = r#"export const cubeQueryExecutorTool = tool({
+    name: "cubeQueryExecutorTool",
+    description: "Execute a cube query with unit inference",
+    schema: z.object({ query: z.string(), unit: z.string().optional() }),
+    execute: async (input) => {
+        const unit = input.unit || inferUnit(input.query);
+        return await runQuery(input.query, unit);
+    },
+});
+"#;
+        let result = entity_merge(base, ours, theirs, "cubeQueryTool.ts");
+        assert!(
+            result.is_clean(),
+            "Rename + modify should auto-resolve, got conflicts: {:?}",
+            result.conflicts
+        );
+        // Should use the new name from ours
+        assert!(
+            result.content.contains("cubeQueryTool"),
+            "Should contain the renamed entity name"
+        );
+        // Should contain the modifications from theirs
+        assert!(
+            result.content.contains("unit inference"),
+            "Should contain theirs' modifications"
+        );
     }
 }
