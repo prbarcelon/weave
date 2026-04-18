@@ -76,6 +76,20 @@ export default function Home() {
           <p className="text-gray-500 text-sm">
             Scenarios include adjacent function edits, import conflicts, class member additions, renames, and decorator changes across Python, TypeScript, Rust, Go, Java, and C. Mergiraf (v0.16.3) fails on both-add-at-end, insert-in-middle, and decorator conflict scenarios.
           </p>
+          <div className="flex flex-wrap gap-6 mt-8">
+            <div className="border border-white/10 rounded-lg px-6 py-4">
+              <p className="text-2xl font-bold text-white" style={{ fontFamily: "var(--font-heading)" }}>1,500+</p>
+              <p className="text-gray-500 text-sm">downloads</p>
+            </div>
+            <div className="border border-white/10 rounded-lg px-6 py-4">
+              <p className="text-2xl font-bold text-white" style={{ fontFamily: "var(--font-heading)" }}>21</p>
+              <p className="text-gray-500 text-sm">languages</p>
+            </div>
+            <div className="border border-white/10 rounded-lg px-6 py-4">
+              <p className="text-2xl font-bold text-white" style={{ fontFamily: "var(--font-heading)" }}>15</p>
+              <p className="text-gray-500 text-sm">MCP tools</p>
+            </div>
+          </div>
         </div>
       </section>
 
