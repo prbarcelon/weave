@@ -2250,12 +2250,25 @@ fn children_to_chunks(
             children[i - 1].end_line.saturating_sub(container_start_line) + 1
         } else {
             // First child: start after the container header line (the `{` or `:` line)
-            // Find the line containing `{` or ending with `:`
-            let header_end = lines
-                .iter()
-                .position(|l| l.contains('{') || l.trim().ends_with(':'))
-                .map(|p| p + 1)
-                .unwrap_or(0);
+            // For Python-style containers, find the declaration line ending with `:`
+            // For brace-delimited, find the opening `{` on a declaration line
+            let header_end = if is_python_style_container(&lines) {
+                lines
+                    .iter()
+                    .position(|l| {
+                        let t = l.trim();
+                        (t.starts_with("class ") || t.starts_with("def ") || t.starts_with("async def "))
+                            && t.ends_with(':')
+                    })
+                    .map(|p| p + 1)
+                    .unwrap_or(0)
+            } else {
+                lines
+                    .iter()
+                    .position(|l| l.contains('{'))
+                    .map(|p| p + 1)
+                    .unwrap_or(0)
+            };
             header_end
         };
 
@@ -2732,6 +2745,36 @@ fn try_inner_merge_with_chunks(
 
 /// Extract the header (class declaration) and footer (closing brace) from a container.
 /// Supports both brace-delimited (JS/TS/Java/Rust/C) and indentation-based (Python) containers.
+/// Detect whether a container entity uses Python-style indentation (`:` terminated
+/// declaration) or brace-delimited style (`{`). Only inspects the declaration
+/// line(s), not the body, so dict literals / set comprehensions inside methods
+/// don't cause a false negative.
+fn is_python_style_container(lines: &[&str]) -> bool {
+    // Find the first line that looks like a class/def/async def declaration
+    let has_colon_decl = lines.iter().any(|l| {
+        let trimmed = l.trim();
+        (trimmed.starts_with("class ")
+            || trimmed.starts_with("def ")
+            || trimmed.starts_with("async def "))
+            && trimmed.ends_with(':')
+    });
+    if !has_colon_decl {
+        return false;
+    }
+    // Verify the container itself opens with `:`, not `{`.
+    // Look at the declaration line (first line ending with `:` that is class/def).
+    // If that line also contains `{` it's not Python style (edge case: shouldn't happen).
+    if let Some(decl) = lines.iter().find(|l| {
+        let t = l.trim();
+        (t.starts_with("class ") || t.starts_with("def ") || t.starts_with("async def "))
+            && t.ends_with(':')
+    }) {
+        !decl.contains('{')
+    } else {
+        false
+    }
+}
+
 fn extract_container_wrapper(content: &str) -> Option<(&str, &str)> {
     let lines: Vec<&str> = content.lines().collect();
     if lines.len() < 2 {
@@ -2739,11 +2782,7 @@ fn extract_container_wrapper(content: &str) -> Option<(&str, &str)> {
     }
 
     // Check if this is a Python-style container (ends with `:` instead of `{`)
-    let is_python_style = lines.iter().any(|l| {
-        let trimmed = l.trim();
-        (trimmed.starts_with("class ") || trimmed.starts_with("def "))
-            && trimmed.ends_with(':')
-    }) && !lines.iter().any(|l| l.contains('{'));
+    let is_python_style = is_python_style_container(&lines);
 
     if is_python_style {
         // Python: header is the `class Foo:` line, no footer
@@ -2792,11 +2831,7 @@ fn extract_member_chunks(content: &str) -> Option<Vec<MemberChunk>> {
     }
 
     // Check if Python-style (indentation-based)
-    let is_python_style = lines.iter().any(|l| {
-        let trimmed = l.trim();
-        (trimmed.starts_with("class ") || trimmed.starts_with("def "))
-            && trimmed.ends_with(':')
-    }) && !lines.iter().any(|l| l.contains('{'));
+    let is_python_style = is_python_style_container(&lines);
 
     // Find the body range
     let body_start = if is_python_style {
